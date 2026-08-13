@@ -1,0 +1,303 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01A000000000000000000101 /* PocketCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000201 /* PocketCoachApp.swift */; };
+		01A000000000000000000102 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000202 /* Theme.swift */; };
+		01A000000000000000000103 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000203 /* Models.swift */; };
+		01A000000000000000000104 /* TeamStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000204 /* TeamStore.swift */; };
+		01A000000000000000000105 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000205 /* Components.swift */; };
+		01A000000000000000000106 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000206 /* RootTabView.swift */; };
+		01A000000000000000000107 /* GameTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000207 /* GameTab.swift */; };
+		01A000000000000000000108 /* RosterTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000208 /* RosterTab.swift */; };
+		01A000000000000000000109 /* DefenseTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A000000000000000000209 /* DefenseTab.swift */; };
+		01A00000000000000000010A /* TimeTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A00000000000000000020A /* TimeTab.swift */; };
+		01A00000000000000000010B /* Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A00000000000000000020B /* Sheets.swift */; };
+		01A00000000000000000010C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 01A00000000000000000020C /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		01A000000000000000000003 /* PocketCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PocketCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		01A000000000000000000201 /* PocketCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PocketCoachApp.swift; sourceTree = "<group>"; };
+		01A000000000000000000202 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		01A000000000000000000203 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		01A000000000000000000204 /* TeamStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamStore.swift; sourceTree = "<group>"; };
+		01A000000000000000000205 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		01A000000000000000000206 /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
+		01A000000000000000000207 /* GameTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameTab.swift; sourceTree = "<group>"; };
+		01A000000000000000000208 /* RosterTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RosterTab.swift; sourceTree = "<group>"; };
+		01A000000000000000000209 /* DefenseTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefenseTab.swift; sourceTree = "<group>"; };
+		01A00000000000000000020A /* TimeTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTab.swift; sourceTree = "<group>"; };
+		01A00000000000000000020B /* Sheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sheets.swift; sourceTree = "<group>"; };
+		01A00000000000000000020C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		01A00000000000000000020D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		01A000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		01A000000000000000000006 /* Root */ = {
+			isa = PBXGroup;
+			children = (
+				01A000000000000000000008 /* PocketCoach */,
+				01A000000000000000000007 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		01A000000000000000000007 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				01A000000000000000000003 /* PocketCoach.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		01A000000000000000000008 /* PocketCoach */ = {
+			isa = PBXGroup;
+			children = (
+				01A000000000000000000201 /* PocketCoachApp.swift */,
+				01A000000000000000000202 /* Theme.swift */,
+				01A000000000000000000203 /* Models.swift */,
+				01A000000000000000000204 /* TeamStore.swift */,
+				01A000000000000000000205 /* Components.swift */,
+				01A000000000000000000206 /* RootTabView.swift */,
+				01A000000000000000000207 /* GameTab.swift */,
+				01A000000000000000000208 /* RosterTab.swift */,
+				01A000000000000000000209 /* DefenseTab.swift */,
+				01A00000000000000000020A /* TimeTab.swift */,
+				01A00000000000000000020B /* Sheets.swift */,
+				01A00000000000000000020C /* Assets.xcassets */,
+				01A00000000000000000020D /* Info.plist */,
+			);
+			path = PocketCoach;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		01A000000000000000000002 /* PocketCoach */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 01A00000000000000000000A /* Build configuration list for PBXNativeTarget "PocketCoach" */;
+			buildPhases = (
+				01A000000000000000000005 /* Sources */,
+				01A000000000000000000004 /* Frameworks */,
+				01A00000000000000000000F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PocketCoach;
+			productName = PocketCoach;
+			productReference = 01A000000000000000000003 /* PocketCoach.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		01A000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1540;
+				LastUpgradeCheck = 1540;
+				TargetAttributes = {
+					01A000000000000000000002 = {
+						CreatedOnToolsVersion = 15.4;
+					};
+				};
+			};
+			buildConfigurationList = 01A000000000000000000009 /* Build configuration list for PBXProject "PocketCoach" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 01A000000000000000000006 /* Root */;
+			productRefGroup = 01A000000000000000000007 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				01A000000000000000000002 /* PocketCoach */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		01A00000000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				01A00000000000000000010C /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		01A000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				01A000000000000000000101 /* PocketCoachApp.swift in Sources */,
+				01A000000000000000000102 /* Theme.swift in Sources */,
+				01A000000000000000000103 /* Models.swift in Sources */,
+				01A000000000000000000104 /* TeamStore.swift in Sources */,
+				01A000000000000000000105 /* Components.swift in Sources */,
+				01A000000000000000000106 /* RootTabView.swift in Sources */,
+				01A000000000000000000107 /* GameTab.swift in Sources */,
+				01A000000000000000000108 /* RosterTab.swift in Sources */,
+				01A000000000000000000109 /* DefenseTab.swift in Sources */,
+				01A00000000000000000010A /* TimeTab.swift in Sources */,
+				01A00000000000000000010B /* Sheets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		01A00000000000000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		01A00000000000000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		01A00000000000000000000D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PocketCoach/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Coach";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pocketcoach.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		01A00000000000000000000E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = PocketCoach/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Pocket Coach";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleLightContent;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pocketcoach.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		01A000000000000000000009 /* Build configuration list for PBXProject "PocketCoach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				01A00000000000000000000B /* Debug */,
+				01A00000000000000000000C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		01A00000000000000000000A /* Build configuration list for PBXNativeTarget "PocketCoach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				01A00000000000000000000D /* Debug */,
+				01A00000000000000000000E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 01A000000000000000000001 /* Project object */;
+}

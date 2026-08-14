@@ -131,11 +131,12 @@ enum DefenseKind: String, Codable, CaseIterable, Identifiable {
 }
 
 enum Force: String, Codable, CaseIterable, Identifiable {
-    case flick, backhand, straight
+    case flick, flickNoUnders, backhand, straight
     var id: String { rawValue }
     var displayName: String {
         switch self {
         case .flick: "Flick"
+        case .flickNoUnders: "Flick · no unders"
         case .backhand: "Backhand"
         case .straight: "Straight up"
         }
@@ -143,6 +144,7 @@ enum Force: String, Codable, CaseIterable, Identifiable {
     var shortLabel: String {
         switch self {
         case .flick: "Flick"
+        case .flickNoUnders: "Flick NU"
         case .backhand: "BH"
         case .straight: "SU"
         }
@@ -385,6 +387,13 @@ struct GameSession: Identifiable, Codable, Hashable {
         playerPoints[playerId.uuidString] ?? 0
     }
 
+    mutating func clearPlayTime() {
+        playerPoints = [:]
+        evenPoints = 0
+        specialPoints = 0
+        podOutings = [:]
+    }
+
     static func fresh(name: String, lineupId: UUID, wind: WindState = .default) -> GameSession {
         GameSession(
             id: UUID(),
@@ -435,24 +444,24 @@ struct Team: Codable, Hashable {
 }
 
 enum SeedIDs {
-    static let alex = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000001")!
-    static let blair = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000002")!
-    static let casey = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000003")!
-    static let drew = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000004")!
-    static let eden = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000005")!
-    static let fin = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000006")!
-    static let gia = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000007")!
-    static let harper = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000008")!
-    static let indy = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000009")!
-    static let jules = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000a")!
-    static let kai = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000b")!
-    static let lane = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000c")!
-    static let morgan = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000d")!
-    static let nico = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000e")!
-    static let oak = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000f")!
-    static let parker = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000010")!
-    static let quinn = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000011")!
-    static let remy = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000012")!
+    static let cora = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000001")!
+    static let daisy = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000002")!
+    static let tonyT = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000003")!
+    static let bean = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000004")!
+    static let cairo = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000005")!
+    static let fusion = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000006")!
+    static let pulse = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000007")!
+    static let bats = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000008")!
+    static let cindy = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000009")!
+    static let cynthia = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000a")!
+    static let ravine = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000b")!
+    static let fabi = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000c")!
+    static let felicia = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000d")!
+    static let gabby = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000e")!
+    static let klaw = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-00000000000f")!
+    static let nicole = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000010")!
+    static let tunez = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000011")!
+    static let aera = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000012")!
 
     static let lineupWeekend = UUID(uuidString: "bbbbbbbb-bbbb-4ccc-8ddd-000000000001")!
     static let game1 = UUID(uuidString: "dddddddd-bbbb-4ccc-8ddd-000000000001")!
@@ -473,42 +482,42 @@ extension Team {
 
     static func sample() -> Team {
         let players: [Player] = [
-            Player(id: SeedIDs.alex, name: "Alex", number: "4", role: .handler),
-            Player(id: SeedIDs.blair, name: "Blair", number: "11", role: .handler),
-            Player(id: SeedIDs.casey, name: "Casey", number: "7", role: .handler),
-            Player(id: SeedIDs.drew, name: "Drew", number: "2", role: .handler),
-            Player(id: SeedIDs.eden, name: "Eden", number: "19", role: .handler),
-            Player(id: SeedIDs.fin, name: "Fin", number: "8", role: .handler),
-            Player(id: SeedIDs.gia, name: "Gia", number: "14", role: .cutter),
-            Player(id: SeedIDs.harper, name: "Harper", number: "21", role: .cutter),
-            Player(id: SeedIDs.indy, name: "Indy", number: "5", role: .cutter),
-            Player(id: SeedIDs.jules, name: "Jules", number: "33", role: .cutter),
-            Player(id: SeedIDs.kai, name: "Kai", number: "9", role: .cutter),
-            Player(id: SeedIDs.lane, name: "Lane", number: "16", role: .cutter),
-            Player(id: SeedIDs.morgan, name: "Morgan", number: "27", role: .cutter),
-            Player(id: SeedIDs.nico, name: "Nico", number: "3", role: .cutter),
-            Player(id: SeedIDs.oak, name: "Oak", number: "18", role: .cutter),
-            Player(id: SeedIDs.parker, name: "Parker", number: "22", role: .cutter),
-            Player(id: SeedIDs.quinn, name: "Quinn", number: "6", role: .flex),
-            Player(id: SeedIDs.remy, name: "Remy", number: "12", role: .cutter)
+            Player(id: SeedIDs.cora, name: "Cora", role: .handler),
+            Player(id: SeedIDs.daisy, name: "Daisy", role: .handler),
+            Player(id: SeedIDs.tonyT, name: "TonyT", role: .handler),
+            Player(id: SeedIDs.bean, name: "Bean", role: .handler),
+            Player(id: SeedIDs.cairo, name: "Cairo", role: .handler),
+            Player(id: SeedIDs.fusion, name: "Fusion", role: .handler),
+            Player(id: SeedIDs.pulse, name: "Pulse", role: .cutter),
+            Player(id: SeedIDs.bats, name: "BATS", role: .cutter),
+            Player(id: SeedIDs.cindy, name: "Cindy", role: .cutter),
+            Player(id: SeedIDs.cynthia, name: "Cynthia", role: .cutter),
+            Player(id: SeedIDs.ravine, name: "Ravine", role: .cutter),
+            Player(id: SeedIDs.fabi, name: "Fabi", role: .cutter),
+            Player(id: SeedIDs.felicia, name: "Felicia", role: .cutter),
+            Player(id: SeedIDs.gabby, name: "Gabby", role: .cutter),
+            Player(id: SeedIDs.klaw, name: "Klaw", role: .cutter),
+            Player(id: SeedIDs.nicole, name: "Nicole", role: .cutter),
+            Player(id: SeedIDs.tunez, name: "Tunez", role: .cutter),
+            Player(id: SeedIDs.aera, name: "Aera", role: .cutter)
         ]
 
         let weekend = Lineup(
             id: SeedIDs.lineupWeekend,
             name: "Weekend",
             pods: [
-                .h1: [SeedIDs.alex, SeedIDs.blair, SeedIDs.casey],
-                .h2: [SeedIDs.drew, SeedIDs.eden, SeedIDs.fin],
-                .c1: [SeedIDs.gia, SeedIDs.harper, SeedIDs.indy, SeedIDs.jules],
-                .c2: [SeedIDs.kai, SeedIDs.lane, SeedIDs.morgan, SeedIDs.nico],
-                .c3: [SeedIDs.oak, SeedIDs.parker, SeedIDs.quinn, SeedIDs.remy]
+                .h1: [SeedIDs.tonyT, SeedIDs.daisy, SeedIDs.fusion],
+                .h2: [SeedIDs.bean, SeedIDs.cora, SeedIDs.cairo],
+                .c1: [SeedIDs.pulse, SeedIDs.ravine, SeedIDs.fabi, SeedIDs.nicole],
+                .c2: [SeedIDs.gabby, SeedIDs.bats, SeedIDs.tunez, SeedIDs.klaw],
+                .c3: [SeedIDs.felicia, SeedIDs.aera, SeedIDs.cindy, SeedIDs.cynthia]
             ],
             fillRotation: [
-                .c1: [SeedIDs.kai, SeedIDs.oak],
-                .c2: [SeedIDs.gia, SeedIDs.oak],
-                .c3: [SeedIDs.harper, SeedIDs.lane],
-                .h1: [SeedIDs.drew],
-                .h2: [SeedIDs.alex]
+                .h1: [SeedIDs.bean, SeedIDs.cora],
+                .h2: [SeedIDs.tonyT, SeedIDs.daisy],
+                .c1: [SeedIDs.gabby, SeedIDs.felicia],
+                .c2: [SeedIDs.pulse, SeedIDs.ravine],
+                .c3: [SeedIDs.pulse, SeedIDs.gabby]
             ]
         )
 
@@ -517,41 +526,68 @@ extension Team {
         game.nextLineCards = [
             NextLineCard(kind: .even, evenOffset: 0),
             NextLineCard(kind: .even, evenOffset: 1),
+            NextLineCard(kind: .even, evenOffset: 2),
             NextLineCard(kind: .zone, relatedId: SeedIDs.clam1),
             NextLineCard(kind: .zone, relatedId: SeedIDs.clam2),
             NextLineCard(kind: .zone, relatedId: SeedIDs.clam3),
             NextLineCard(kind: .zone, relatedId: SeedIDs.cup),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.junk),
             NextLineCard(kind: .zone, relatedId: SeedIDs.kill)
         ]
 
+        // Clam sevens are Mark, F-On, F-Off, Backwards, Back-On, Back-off, Deep.
         let saved: [SavedLine] = [
-            SavedLine(id: SeedIDs.clam1, name: "Clam 1", defenseKind: .clam, force: .backhand,
-                      playerIds: [SeedIDs.alex, SeedIDs.drew, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn]),
-            SavedLine(id: SeedIDs.clam2, name: "Clam 2", defenseKind: .clam, force: .backhand,
-                      playerIds: [SeedIDs.blair, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.lane, SeedIDs.parker, SeedIDs.nico]),
-            SavedLine(id: SeedIDs.clam3, name: "Clam 3", defenseKind: .clam, force: .flick,
-                      playerIds: [SeedIDs.casey, SeedIDs.fin, SeedIDs.morgan, SeedIDs.remy, SeedIDs.harper, SeedIDs.oak, SeedIDs.quinn]),
-            SavedLine(id: SeedIDs.cup, name: "Cup", defenseKind: .cup, force: .backhand,
-                      playerIds: [SeedIDs.casey, SeedIDs.fin, SeedIDs.gia, SeedIDs.morgan, SeedIDs.oak, SeedIDs.remy, SeedIDs.quinn]),
-            SavedLine(id: SeedIDs.person, name: "Person", defenseKind: .person, force: .backhand,
-                      playerIds: [SeedIDs.alex, SeedIDs.blair, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.lane, SeedIDs.oak]),
-            SavedLine(id: SeedIDs.junk, name: "Junk", defenseKind: .junk, force: .flick,
-                      playerIds: [SeedIDs.drew, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.morgan, SeedIDs.parker, SeedIDs.remy]),
-            SavedLine(id: SeedIDs.kill, name: "Kill", defenseKind: .kill, force: .flick,
-                      playerIds: [SeedIDs.alex, SeedIDs.casey, SeedIDs.gia, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn, SeedIDs.harper])
+            SavedLine(
+                id: SeedIDs.clam1, name: "Clam 1", defenseKind: .clam, force: .flick,
+                playerIds: [SeedIDs.cora, SeedIDs.gabby, SeedIDs.tunez, SeedIDs.bean, SeedIDs.fabi, SeedIDs.pulse, SeedIDs.tonyT]
+            ),
+            SavedLine(
+                id: SeedIDs.clam2, name: "Clam 2", defenseKind: .clam, force: .backhand,
+                playerIds: [SeedIDs.cynthia, SeedIDs.bats, SeedIDs.fusion, SeedIDs.daisy, SeedIDs.cairo, SeedIDs.cindy, SeedIDs.aera]
+            ),
+            SavedLine(
+                id: SeedIDs.clam3, name: "Clam 3", defenseKind: .clam, force: .flick,
+                playerIds: [SeedIDs.gabby, SeedIDs.cora, SeedIDs.bean, SeedIDs.tunez, SeedIDs.nicole, SeedIDs.felicia, SeedIDs.tonyT]
+            ),
+            SavedLine(
+                id: SeedIDs.cup, name: "3-Cup", defenseKind: .cup, force: .backhand,
+                playerIds: [SeedIDs.tonyT, SeedIDs.bean, SeedIDs.daisy, SeedIDs.pulse, SeedIDs.gabby, SeedIDs.felicia, SeedIDs.ravine]
+            ),
+            SavedLine(
+                id: SeedIDs.person, name: "Person", defenseKind: .person, force: .flickNoUnders,
+                playerIds: [SeedIDs.tonyT, SeedIDs.daisy, SeedIDs.fusion, SeedIDs.pulse, SeedIDs.ravine, SeedIDs.fabi, SeedIDs.nicole]
+            ),
+            SavedLine(
+                id: SeedIDs.junk, name: "3-2-2", defenseKind: .junk, force: .flick,
+                playerIds: [SeedIDs.cora, SeedIDs.fusion, SeedIDs.cairo, SeedIDs.bats, SeedIDs.tunez, SeedIDs.klaw, SeedIDs.cindy]
+            ),
+            SavedLine(
+                id: SeedIDs.kill, name: "Kill", defenseKind: .kill, force: .flick,
+                playerIds: [SeedIDs.tonyT, SeedIDs.daisy, SeedIDs.bean, SeedIDs.pulse, SeedIDs.bats, SeedIDs.gabby, SeedIDs.felicia]
+            )
         ]
 
         let rules: [WindRule] = [
-            WindRule(name: "Crosswind L→R → Clam · BH", gameType: .crosswind, direction: .leftToRight,
-                     savedLineId: SeedIDs.clam1, forceOverride: .backhand),
-            WindRule(name: "Crosswind R→L → Clam · Flick", gameType: .crosswind, direction: .rightToLeft,
-                     savedLineId: SeedIDs.clam2, forceOverride: .flick),
-            WindRule(name: "No / light wind → Person", gameType: .none,
-                     savedLineId: SeedIDs.person, forceOverride: .backhand),
-            WindRule(name: "They attack downwind → Junk", gameType: .upwindDownwind, minSpeed: .strong,
-                     pointIsUpwind: false, savedLineId: SeedIDs.junk),
-            WindRule(name: "They attack upwind → Cup", gameType: .upwindDownwind, minSpeed: .strong,
-                     pointIsUpwind: true, savedLineId: SeedIDs.cup)
+            WindRule(
+                name: "Crosswind L→R → Clam · low side (Flick)",
+                gameType: .crosswind, direction: .leftToRight,
+                savedLineId: SeedIDs.clam1, forceOverride: .flick
+            ),
+            WindRule(
+                name: "Crosswind R→L → Clam · low side (BH)",
+                gameType: .crosswind, direction: .rightToLeft,
+                savedLineId: SeedIDs.clam2, forceOverride: .backhand
+            ),
+            WindRule(
+                name: "No wind → Person · Flick · no unders",
+                gameType: .none,
+                savedLineId: SeedIDs.person, forceOverride: .flickNoUnders
+            ),
+            WindRule(
+                name: "Up/downwind → 3-Cup",
+                gameType: .upwindDownwind,
+                savedLineId: SeedIDs.cup
+            )
         ]
 
         return Team(
@@ -567,7 +603,7 @@ extension Team {
             games: [game],
             tournament: .default,
             flipPreference: .defense,
-            flipNotes: "Prefer D if wind is calm. Take upwind if it's blowing."
+            flipNotes: "No wind: force flick, no unders. Crosswind: clam to the low side. Up/downwind: 3-Cup. 3-2-2 vs a fast shooting O."
         )
     }
 }

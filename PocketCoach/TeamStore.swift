@@ -16,6 +16,34 @@ final class TeamStore: ObservableObject {
             self.team = .sample()
         }
         persistEnabled = true
+        migrateNoWindDefaultIfNeeded()
+    }
+
+    /// Old sample data forced backhand in no wind. Product default is flick, no unders.
+    private func migrateNoWindDefaultIfNeeded() {
+        let oldName = "No / light wind → Person"
+        let newName = "No wind → Person · Flick · no unders"
+        let needsRule = team.windRules.contains {
+            $0.gameType == .none
+                && $0.savedLineId == SeedIDs.person
+                && ($0.forceOverride == .backhand || $0.name == oldName)
+        }
+        let needsPerson = team.savedLines.contains { $0.id == SeedIDs.person && $0.force == .backhand }
+        guard needsRule || needsPerson else { return }
+        mutate { team in
+            for i in team.windRules.indices
+            where team.windRules[i].gameType == .none && team.windRules[i].savedLineId == SeedIDs.person {
+                if team.windRules[i].forceOverride == .backhand {
+                    team.windRules[i].forceOverride = .flickNoUnders
+                }
+                if team.windRules[i].name == oldName {
+                    team.windRules[i].name = newName
+                }
+            }
+            if let i = team.savedLines.firstIndex(where: { $0.id == SeedIDs.person && $0.force == .backhand }) {
+                team.savedLines[i].force = .flickNoUnders
+            }
+        }
     }
 
     private static var fileURL: URL {
@@ -338,6 +366,16 @@ final class TeamStore: ObservableObject {
     }
 
     func suggestedDefense() -> (line: SavedLine, force: Force, ruleName: String)? {
+        let wind = activeGame.wind
+        if wind.gameType == .none {
+            if let rule = matchingWindRule(), let line = savedLine(id: rule.savedLineId) {
+                return (line, .flickNoUnders, rule.name)
+            }
+            if let person = team.savedLines.first(where: { $0.defenseKind == .person }) {
+                return (person, .flickNoUnders, "No wind · force flick, no unders")
+            }
+            return nil
+        }
         guard let rule = matchingWindRule(), let line = savedLine(id: rule.savedLineId) else { return nil }
         return (line, rule.forceOverride ?? line.force, rule.name)
     }
@@ -383,6 +421,29 @@ final class TeamStore: ObservableObject {
             guard let i = team.games.firstIndex(where: { $0.id == id }) else { return }
             team.games[i].name = trimmed
         }
+    }
+
+    func resetGame(_ id: UUID) {
+        mutate { team in
+            guard let i = team.games.firstIndex(where: { $0.id == id }) else { return }
+            team.games[i].usScore = 0
+            team.games[i].themScore = 0
+            team.games[i].clearPlayTime()
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
+
+    func deleteGame(_ id: UUID) {
+        guard team.games.count > 1, team.games.contains(where: { $0.id == id }) else { return }
+        mutate { team in
+            team.games.removeAll { $0.id == id }
+            if team.activeGameId == id {
+                let next = team.games.sorted { $0.createdAt > $1.createdAt }[0]
+                team.activeGameId = next.id
+                team.activeLineupId = next.lineupId
+            }
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
 
     func updateTournament(_ settings: TournamentSettings) {
@@ -774,6 +835,15 @@ final class TeamStore: ObservableObject {
 
     func deleteWindRule(_ id: UUID) {
         mutate { $0.windRules.removeAll { $0.id == id } }
+    }
+
+    func resetAllPlayTime() {
+        mutate { team in
+            for i in team.games.indices {
+                team.games[i].clearPlayTime()
+            }
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
     }
 
     func restoreSampleData() {

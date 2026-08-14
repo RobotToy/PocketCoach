@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct PlayerChip: View {
     let player: Player
@@ -88,44 +89,162 @@ struct NextLineCardView: View {
     }
 }
 
+private struct ChipWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct GameMenu: View {
     @ObservedObject var store: TeamStore
+    @State private var showPicker = false
+    @State private var showActions = false
+    @State private var suppressTap = false
+    @State private var chipWidth: CGFloat = 0
+    @State private var confirm: GameDestructiveAction?
+    @State private var pendingConfirm: GameDestructiveAction?
+
+    private enum GameDestructiveAction: String, Identifiable {
+        case reset, delete
+        var id: String { rawValue }
+    }
 
     var body: some View {
-        Menu {
-            ForEach(store.team.games.sorted(by: { $0.createdAt > $1.createdAt })) { game in
-                Button {
-                    store.setActiveGame(game.id)
-                } label: {
-                    if game.id == store.team.activeGameId {
-                        Label(game.name, systemImage: "checkmark")
-                    } else {
-                        Text(game.name)
-                    }
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                guard !suppressTap else {
+                    suppressTap = false
+                    return
+                }
+                showPicker.toggle()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "flag.checkered")
+                    Text(store.activeGame.name)
+                        .font(.subheadline.weight(.bold))
+                        .lineLimit(1)
+                    Image(systemName: showPicker ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(FieldTheme.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(minHeight: 44)
+                .background(FieldTheme.surfaceRaised)
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .overlay {
+                GeometryReader { geo in
+                    Color.clear.preference(key: ChipWidthKey.self, value: geo.size.width)
                 }
             }
-            Divider()
-            Button {
-                store.createGame(named: nil, lineupId: nil)
-            } label: {
-                Label("New game", systemImage: "plus")
+            .onLongPressGesture(minimumDuration: 0.45) {
+                suppressTap = true
+                showPicker = false
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                showActions = true
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "flag.checkered")
-                Text(store.activeGame.name)
-                    .font(.subheadline.weight(.bold))
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.bold))
+            .accessibilityLabel("Current game \(store.activeGame.name)")
+            .accessibilityHint("Tap to switch games. Touch and hold to reset or delete this game.")
+
+            if showPicker, chipWidth > 0 {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(store.team.games.sorted(by: { $0.createdAt > $1.createdAt })) { game in
+                        Button {
+                            store.setActiveGame(game.id)
+                            showPicker = false
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(game.name)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(FieldTheme.textPrimary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Spacer(minLength: 0)
+                                if game.id == store.team.activeGameId {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(FieldTheme.score)
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .frame(width: chipWidth, height: 40, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Rectangle()
+                        .fill(FieldTheme.stroke)
+                        .frame(height: 1)
+                    Button {
+                        store.createGame(named: nil, lineupId: nil)
+                        showPicker = false
+                    } label: {
+                        Label("New game", systemImage: "plus")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(FieldTheme.accent)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.horizontal, 10)
+                            .frame(width: chipWidth, height: 40, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .frame(width: chipWidth, alignment: .leading)
+                .clipped()
+                .background(FieldTheme.surfaceRaised)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(FieldTheme.stroke, lineWidth: 1)
+                )
             }
-            .foregroundStyle(FieldTheme.textPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .frame(minHeight: 44)
-            .background(FieldTheme.surfaceRaised)
-            .clipShape(Capsule())
         }
-        .accessibilityLabel("Current game \(store.activeGame.name)")
+        .fixedSize(horizontal: true, vertical: false)
+        .onPreferenceChange(ChipWidthKey.self) { chipWidth = $0 }
+        .confirmationDialog(store.activeGame.name, isPresented: $showActions, titleVisibility: .visible) {
+            Button("Reset score", role: .destructive) {
+                pendingConfirm = .reset
+            }
+            if store.team.games.count > 1 {
+                Button("Delete game", role: .destructive) {
+                    pendingConfirm = .delete
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Reset or delete \(store.activeGame.name). Both clear this game’s play time.")
+        }
+        .onChange(of: showActions) { _, isPresented in
+            if !isPresented, let pendingConfirm {
+                self.pendingConfirm = nil
+                confirm = pendingConfirm
+            }
+        }
+        .alert(item: $confirm) { action in
+            switch action {
+            case .reset:
+                Alert(
+                    title: Text("Reset \(store.activeGame.name)?"),
+                    message: Text("Score goes to 0–0 and this game’s play time is wiped. Other games stay."),
+                    primaryButton: .destructive(Text("Reset score and play time")) {
+                        store.resetGame(store.activeGame.id)
+                    },
+                    secondaryButton: .cancel()
+                )
+            case .delete:
+                Alert(
+                    title: Text("Delete \(store.activeGame.name)?"),
+                    message: Text("Removes this game and all play time logged for it. Other games stay."),
+                    primaryButton: .destructive(Text("Delete game")) {
+                        store.deleteGame(store.activeGame.id)
+                    },
+                    secondaryButton: .cancel()
+                )
+            }
+        }
     }
 }
 

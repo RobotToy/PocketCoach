@@ -62,7 +62,7 @@ struct GameTab: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(alignment: .top) {
             GameMenu(store: store)
             Spacer()
             if store.isSpecialLineActive {

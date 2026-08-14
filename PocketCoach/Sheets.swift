@@ -113,6 +113,9 @@ struct TeamSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var confirmRestore = false
+    @State private var confirmResetPlayTime = false
+    @State private var confirmResetPlayTimeAgain = false
+    @State private var pendingSecondResetConfirm = false
     @State private var renameGame = ""
     @State private var showRenameGame = false
 
@@ -162,6 +165,14 @@ struct TeamSettingsSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(FieldTheme.textSecondary)
                     }
+                    Section("Play time") {
+                        Text("Zeros player points, pod outings, and even/zone counts on every game. Roster names, lineups, and scores stay.")
+                            .font(.subheadline)
+                            .foregroundStyle(FieldTheme.textSecondary)
+                        Button("Reset all roster play time", role: .destructive) {
+                            confirmResetPlayTime = true
+                        }
+                    }
                     Section {
                         Button("Restore sample roster", role: .destructive) { confirmRestore = true }
                     }
@@ -185,6 +196,30 @@ struct TeamSettingsSheet: View {
                 TextField("Name", text: $renameGame)
                 Button("Save") { store.renameGame(store.activeGame.id, to: renameGame) }
                 Button("Cancel", role: .cancel) {}
+            }
+            .alert("Reset all play time?", isPresented: $confirmResetPlayTime) {
+                Button("Continue", role: .destructive) {
+                    pendingSecondResetConfirm = true
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingSecondResetConfirm = false
+                }
+            } message: {
+                Text("This clears attendance for every game on this phone. Roster and scores stay.")
+            }
+            .onChange(of: confirmResetPlayTime) { _, isPresented in
+                if !isPresented, pendingSecondResetConfirm {
+                    pendingSecondResetConfirm = false
+                    confirmResetPlayTimeAgain = true
+                }
+            }
+            .alert("Really wipe play time?", isPresented: $confirmResetPlayTimeAgain) {
+                Button("Wipe play time", role: .destructive) {
+                    store.resetAllPlayTime()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This cannot be undone. Every player’s points and pod outings will go to zero.")
             }
             .alert("Replace all data with the sample team?", isPresented: $confirmRestore) {
                 Button("Restore", role: .destructive) {

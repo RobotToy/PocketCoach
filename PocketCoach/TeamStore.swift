@@ -570,14 +570,14 @@ final class TeamStore: ObservableObject {
 
     func setActiveLineup(_ id: UUID) {
         guard team.lineups.contains(where: { $0.id == id }) else { return }
-        mutate {
-            $0.activeLineupId = id
-            if let gi = $0.games.firstIndex(where: { $0.id == $0.activeGameId }) {
-                $0.games[gi].lineupId = id
-                $0.games[gi].hPointer = 0
-                $0.games[gi].cPointer = 0
-                $0.games[gi].currentLineSource = .rotation
-                $0.games[gi].onNowOverride = nil
+        mutate { team in
+            team.activeLineupId = id
+            if let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) {
+                team.games[gi].lineupId = id
+                team.games[gi].hPointer = 0
+                team.games[gi].cPointer = 0
+                team.games[gi].currentLineSource = .rotation
+                team.games[gi].onNowOverride = nil
             }
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()

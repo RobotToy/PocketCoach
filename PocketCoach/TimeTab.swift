@@ -2,54 +2,67 @@ import SwiftUI
 
 struct TimeTab: View {
     @EnvironmentObject private var store: TeamStore
-    @State private var confirmResetWeekend = false
+    @State private var scope: TimeScope = .game
+    @State private var roleFilter: RoleFilter = .all
+    @State private var selectedPlayer: Player?
+
+    enum RoleFilter: String, CaseIterable, Identifiable {
+        case all, handlers, cutters
+        var id: String { rawValue }
+        var displayName: String {
+            switch self {
+            case .all: "All"
+            case .handlers: "Handlers"
+            case .cutters: "Cutters"
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
             FieldScreen {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        Picker("Scope", selection: $scope) {
+                            ForEach(TimeScope.allCases) { s in
+                                Text(s.displayName).tag(s)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
                         meter
-                        podSection
                         playerSection
-                        Button("Reset weekend points") { confirmResetWeekend = true }
-                            .buttonStyle(FieldButtonStyle(fill: FieldTheme.danger.opacity(0.2), foreground: FieldTheme.danger))
+                        podSection
                     }
                     .padding(16)
                 }
             }
             .navigationTitle("Time")
             .navigationBarTitleDisplayMode(.inline)
-            .alert("Reset all play time?", isPresented: $confirmResetWeekend) {
-                Button("Reset", role: .destructive) { store.resetWeekendPoints() }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This clears weekend and game points for everyone, plus even/zone counters.")
+            .sheet(item: $selectedPlayer) { player in
+                AdjustPointsSheet(player: player, scope: scope)
             }
         }
     }
 
     private var meter: some View {
-        let game = store.team.game
-        let ratio = game.specialRatio
+        let stats = store.specialRatio(scope: scope)
         return VStack(alignment: .leading, spacing: 10) {
-            Text("80 / 20")
+            Text("Rotation goal")
                 .font(.title3.weight(.bold))
-            Text("Even rotation \(game.evenPoints) · Zone/kill \(game.specialPoints) · Total \(game.totalPoints)")
+            Text("Even \(stats.even) · Zone/kill \(stats.special) · Total \(stats.even + stats.special)")
                 .font(.subheadline)
                 .foregroundStyle(FieldTheme.textSecondary)
-            ProgressView(value: min(ratio, 1))
-                .tint(ratio > 0.25 ? FieldTheme.danger : FieldTheme.score)
-            if game.totalPoints == 0 {
-                Text("No points yet this game.")
+            ProgressView(value: min(stats.ratio, 1))
+                .tint(stats.ratio > 0.25 ? FieldTheme.danger : FieldTheme.score)
+            if stats.even + stats.special == 0 {
+                Text("No points in this scope yet.")
                     .font(.caption)
                     .foregroundStyle(FieldTheme.textSecondary)
-            } else if ratio > 0.25 {
-                InlineWarning(
-                    text: String(format: "Special lines are %.0f%% of points. Aim for ~20%%.", ratio * 100)
-                )
+            } else if stats.ratio > 0.25 {
+                InlineWarning(text: String(format: "Special lines are %.0f%%. Aim for ~20%%.", stats.ratio * 100))
             } else {
-                Text(String(format: "Special lines: %.0f%% — on target.", ratio * 100))
+                Text(String(format: "Special lines: %.0f%% — on target.", stats.ratio * 100))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(FieldTheme.score)
             }
@@ -59,22 +72,86 @@ struct TimeTab: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private var filteredPlayers: [Player] {
+        let base: [Player] = {
+            switch roleFilter {
+            case .all: return store.team.players
+            case .handlers: return store.team.players.filter { $0.role == .handler || $0.role == .flex }
+            case .cutters: return store.team.players.filter { $0.role == .cutter || $0.role == .flex }
+            }
+        }()
+        let active = base.filter { $0.status == .active }
+            .sorted {
+                let lp = store.points(for: $0.id, scope: scope)
+                let rp = store.points(for: $1.id, scope: scope)
+                if lp != rp { return lp < rp }
+                return $0.name < $1.name
+            }
+        let sideline = base.filter { $0.status.isSideline }
+            .sorted { $0.name < $1.name }
+        return active + sideline
+    }
+
+    private var playerSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Players")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Picker("Role", selection: $roleFilter) {
+                    ForEach(RoleFilter.allCases) { f in
+                        Text(f.displayName).tag(f)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            Text("Least played on top. Injured at bottom. Tap a name to adjust.")
+                .font(.caption)
+                .foregroundStyle(FieldTheme.textSecondary)
+
+            ForEach(filteredPlayers) { player in
+                Button { selectedPlayer = player } label: {
+                    HStack(spacing: 8) {
+                        RoleBadge(role: player.role, compact: true)
+                        Text(player.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(player.status == .active ? FieldTheme.textPrimary : FieldTheme.textSecondary)
+                            .lineLimit(1)
+                        if player.status.isSideline {
+                            StatusBadge(status: player.status)
+                        }
+                        Spacer(minLength: 0)
+                        Text("\(store.points(for: player.id, scope: scope))")
+                            .font(.headline.monospacedDigit())
+                            .foregroundStyle(FieldTheme.textPrimary)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 40)
+                    .background(player.status.isSideline ? FieldTheme.danger.opacity(0.08) : FieldTheme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private var podSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Pods this game")
+            Text("Pods")
                 .font(.title3.weight(.bold))
             ForEach(PodId.allCases) { pod in
-                let members = store.players(in: pod)
-                let outing = store.team.game.outings(for: pod)
+                let outing = store.podOutings(pod, scope: scope)
+                let memberPts = store.players(in: pod).reduce(0) { $0 + store.points(for: $1.id, scope: scope) }
                 HStack {
                     Text(pod.displayName)
                         .font(.headline)
                         .foregroundStyle(pod.isHandler ? FieldTheme.handler : FieldTheme.cutter)
                     Spacer()
-                    Text("\(outing) even outs")
+                    Text("\(outing) outs")
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(FieldTheme.textSecondary)
-                    Text("· \(members.reduce(0) { $0 + $1.gamePoints }) pts")
+                    Text("· \(memberPts) pts")
                         .font(.subheadline.monospacedDigit())
                 }
                 .padding(12)
@@ -82,61 +159,5 @@ struct TimeTab: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
-    }
-
-    private var playerSection: some View {
-        let median = medianPoints(store.team.players.map(\.weekendPoints))
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Players")
-                .font(.title3.weight(.bold))
-            Text("Weekend / this game. Highlighted if well above median.")
-                .font(.caption)
-                .foregroundStyle(FieldTheme.textSecondary)
-            ForEach(store.team.players.sorted { $0.weekendPoints > $1.weekendPoints }) { player in
-                HStack(spacing: 10) {
-                    RoleBadge(role: player.role, compact: true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(player.name)
-                            .font(.headline)
-                        if player.status != .active {
-                            StatusBadge(status: player.status)
-                        }
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(player.weekendPoints)")
-                            .font(.title3.weight(.bold).monospacedDigit())
-                        Text("g \(player.gamePoints)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(FieldTheme.textSecondary)
-                    }
-                    VStack(spacing: 4) {
-                        Button("+") { store.adjustPlayerPoints(id: player.id, weekendDelta: 1, gameDelta: 1) }
-                            .buttonStyle(FieldButtonStyle(minHeight: 44))
-                        Button("-") { store.adjustPlayerPoints(id: player.id, weekendDelta: -1, gameDelta: -1) }
-                            .buttonStyle(FieldButtonStyle(minHeight: 44))
-                    }
-                    .frame(width: 56)
-                }
-                .padding(12)
-                .background(isHot(player.weekendPoints, median: median) ? FieldTheme.warn.opacity(0.16) : FieldTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-        }
-    }
-
-    private func medianPoints(_ values: [Int]) -> Double {
-        let sorted = values.sorted()
-        guard !sorted.isEmpty else { return 0 }
-        let mid = sorted.count / 2
-        if sorted.count.isMultiple(of: 2) {
-            return Double(sorted[mid - 1] + sorted[mid]) / 2
-        }
-        return Double(sorted[mid])
-    }
-
-    private func isHot(_ points: Int, median: Double) -> Bool {
-        guard median > 0 else { return false }
-        return Double(points) >= median * 1.4 && points - Int(median.rounded()) >= 2
     }
 }

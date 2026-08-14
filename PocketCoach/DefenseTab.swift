@@ -6,13 +6,14 @@ struct DefenseTab: View {
     @State private var creatingLine = false
     @State private var editingRule: WindRule?
     @State private var creatingRule = false
+    @State private var showFlip = false
 
     var body: some View {
         NavigationStack {
             FieldScreen {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        Text("Team-wide D lines. They stay the same when you switch lineups.")
+                        Text("Team-wide D lines stay the same when you switch lineups. Multiple clam lines are fine — wind rules pick force.")
                             .font(.subheadline)
                             .foregroundStyle(FieldTheme.textSecondary)
 
@@ -20,9 +21,7 @@ struct DefenseTab: View {
                             Text("Saved lines")
                                 .font(.title3.weight(.bold))
                             Spacer()
-                            Button {
-                                creatingLine = true
-                            } label: {
+                            Button { creatingLine = true } label: {
                                 Label("Add", systemImage: "plus")
                             }
                         }
@@ -38,13 +37,11 @@ struct DefenseTab: View {
                             Text("Wind rules")
                                 .font(.title3.weight(.bold))
                             Spacer()
-                            Button {
-                                creatingRule = true
-                            } label: {
+                            Button { creatingRule = true } label: {
                                 Label("Add", systemImage: "plus")
                             }
                         }
-                        Text("Left → right means wind left to right as you look toward the end you are defending this point.")
+                        Text("Left → right = wind left to right as you look toward the end you are defending this point. Rules set both the line and the force.")
                             .font(.caption)
                             .foregroundStyle(FieldTheme.textSecondary)
 
@@ -54,24 +51,19 @@ struct DefenseTab: View {
                             }
                             .buttonStyle(.plain)
                         }
+
+                        flipSection
                     }
                     .padding(16)
                 }
             }
             .navigationTitle("Defense")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $editingLine) { line in
-                SavedLineEditorSheet(line: line)
-            }
-            .sheet(isPresented: $creatingLine) {
-                SavedLineEditorSheet(line: nil)
-            }
-            .sheet(item: $editingRule) { rule in
-                WindRuleEditorSheet(rule: rule)
-            }
-            .sheet(isPresented: $creatingRule) {
-                WindRuleEditorSheet(rule: nil)
-            }
+            .sheet(item: $editingLine) { SavedLineEditorSheet(line: $0) }
+            .sheet(isPresented: $creatingLine) { SavedLineEditorSheet(line: nil) }
+            .sheet(item: $editingRule) { WindRuleEditorSheet(rule: $0) }
+            .sheet(isPresented: $creatingRule) { WindRuleEditorSheet(rule: nil) }
+            .sheet(isPresented: $showFlip) { FlipPreferenceSheet() }
         }
     }
 
@@ -86,7 +78,7 @@ struct DefenseTab: View {
                     .font(.caption.weight(.bold))
                     .foregroundStyle(FieldTheme.accent)
             }
-            Text("Force \(line.force.displayName)")
+            Text("Default force \(line.force.displayName)")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(FieldTheme.textSecondary)
             Text(names.isEmpty ? "No players assigned" : names)
@@ -109,24 +101,46 @@ struct DefenseTab: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(FieldTheme.accent)
             HStack(spacing: 8) {
-                if let direction = rule.direction {
-                    Text(direction.displayName)
-                }
-                if let speed = rule.minSpeed {
-                    Text("min \(speed.displayName)")
-                }
+                if let direction = rule.direction { Text(direction.displayName) }
+                if let speed = rule.minSpeed { Text("min \(speed.displayName)") }
                 if let upwind = rule.pointIsUpwind {
                     Text(upwind ? "defending upwind" : "defending downwind")
                 }
             }
             .font(.caption)
             .foregroundStyle(FieldTheme.textSecondary)
-            Text("→ \(lineName)\(rule.forceOverride.map { " · \($0.shortLabel)" } ?? "")")
+            Text("→ \(lineName)\(rule.forceOverride.map { " · force \($0.displayName)" } ?? "")")
                 .font(.subheadline)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(FieldTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var flipSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("If we win the flip")
+                .font(.title3.weight(.bold))
+            Button { showFlip = true } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(store.team.flipPreference.displayName)
+                        .font(.headline)
+                    Text(store.team.flipPreference.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(FieldTheme.textSecondary)
+                    if !store.team.flipNotes.isEmpty {
+                        Text(store.team.flipNotes)
+                            .font(.caption)
+                            .foregroundStyle(FieldTheme.textSecondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(FieldTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
     }
 }

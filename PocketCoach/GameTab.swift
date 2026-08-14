@@ -1,11 +1,15 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct GameTab: View {
     @EnvironmentObject private var store: TeamStore
     @State private var showWind = false
-    @State private var showNewGame = false
     @State private var showSettings = false
+    @State private var showCaps = false
+    @State private var showEditOnNow = false
+    @State private var showCustomLine = false
     @State private var playerForStatus: Player?
+    @State private var draggingCard: NextLineCard?
 
     var body: some View {
         NavigationStack {
@@ -18,11 +22,10 @@ struct GameTab: View {
                             windSection
                             suggestionBanner
                             fairnessWarning
-                            shortPodWarnings
+                            fillSuggestions
                             currentLineCard
-                            nextLines
-                            defenseButtons
-                            podChips
+                            nextLinesSection
+                            capsFooter
                         }
                         .padding(.horizontal, 16)
                         .padding(.top, 8)
@@ -35,38 +38,37 @@ struct GameTab: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showSettings = true
-                    } label: {
+                    Button { showSettings = true } label: {
                         Image(systemName: "gearshape.fill")
                     }
                     .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel("Team settings")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("New game") { showNewGame = true }
-                        .font(.subheadline.weight(.semibold))
+                    Button {
+                        store.createGame(named: nil, lineupId: nil)
+                    } label: {
+                        Label("New game", systemImage: "plus")
+                    }
+                    .font(.subheadline.weight(.semibold))
                 }
             }
             .sheet(isPresented: $showWind) { WindSheet() }
-            .sheet(isPresented: $showNewGame) { NewGameSheet() }
             .sheet(isPresented: $showSettings) { TeamSettingsSheet() }
-            .sheet(item: $playerForStatus) { player in
-                PlayerStatusSheet(player: player)
-            }
+            .sheet(isPresented: $showCaps) { TournamentCapsSheet() }
+            .sheet(isPresented: $showEditOnNow) { EditOnNowSheet() }
+            .sheet(isPresented: $showCustomLine) { CustomLineSheet() }
+            .sheet(item: $playerForStatus) { PlayerStatusSheet(player: $0) }
         }
     }
 
     private var header: some View {
         HStack {
-            LineupMenu(store: store)
+            GameMenu(store: store)
             Spacer()
             if store.isSpecialLineActive {
-                Button("Back to even") {
-                    store.clearToRotation()
-                }
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(FieldTheme.warn)
+                Button("Back to even") { store.clearToRotation() }
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(FieldTheme.warn)
             }
         }
     }
@@ -74,18 +76,18 @@ struct GameTab: View {
     private var scoreRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                ScoreBox(title: "Us", value: store.team.game.usScore) {
+                ScoreBox(title: "Us", value: store.activeGame.usScore, goal: store.team.tournament.gameTo) {
                     store.bumpScore(us: -1)
                 } onPlus: {
                     store.bumpScore(us: 1)
                 }
-                ScoreBox(title: "Them", value: store.team.game.themScore) {
+                ScoreBox(title: "Them", value: store.activeGame.themScore, goal: store.team.tournament.gameTo) {
                     store.bumpScore(them: -1)
                 } onPlus: {
                     store.bumpScore(them: 1)
                 }
             }
-            Text("+/− fixes the score only. We scored / They scored also counts play time.")
+            Text("+/− fixes score only. We scored / They scored also counts play time.")
                 .font(.caption)
                 .foregroundStyle(FieldTheme.textSecondary)
         }
@@ -111,11 +113,11 @@ struct GameTab: View {
             }
             .buttonStyle(.plain)
 
-            if store.team.game.wind.gameType == .upwindDownwind {
-                Button {
-                    store.togglePointIsUpwind()
-                } label: {
-                    Text(store.team.game.wind.pointIsUpwind ? "This point: defending UPWIND (they attack into wind)" : "This point: defending DOWNWIND (they attack with wind)")
+            if store.activeGame.wind.gameType == .upwindDownwind {
+                Button { store.togglePointIsUpwind() } label: {
+                    Text(store.activeGame.wind.pointIsUpwind
+                         ? "This point: defending UPWIND"
+                         : "This point: defending DOWNWIND")
                         .font(.subheadline.weight(.bold))
                         .frame(maxWidth: .infinity, minHeight: 52)
                 }
@@ -125,25 +127,20 @@ struct GameTab: View {
     }
 
     private var windSummary: String {
-        let wind = store.team.game.wind
+        let wind = store.activeGame.wind
         switch wind.gameType {
-        case .none:
-            return "No wind · \(wind.speed.displayName) · tap to edit"
-        case .crosswind:
-            return "Crosswind \(wind.direction.displayName) · \(wind.speed.displayName)"
-        case .upwindDownwind:
-            return "Up/downwind · \(wind.speed.displayName)"
+        case .none: return "No wind · \(wind.speed.displayName)"
+        case .crosswind: return "Crosswind \(wind.direction.displayName) · \(wind.speed.displayName)"
+        case .upwindDownwind: return "Up/downwind · \(wind.speed.displayName)"
         }
     }
 
     @ViewBuilder
     private var suggestionBanner: some View {
         if let suggestion = store.suggestedDefense() {
-            Button {
-                store.selectSavedLine(suggestion.line.id)
-            } label: {
+            Button { store.selectSavedLine(suggestion.line.id) } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Suggested D")
+                    Text("Suggested D from wind")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(FieldTheme.accent)
                     Text("\(suggestion.line.name) · force \(suggestion.force.displayName)")
@@ -156,10 +153,6 @@ struct GameTab: View {
                 .padding(14)
                 .background(FieldTheme.accent.opacity(0.16))
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(FieldTheme.accent.opacity(0.5), lineWidth: 1)
-                )
             }
             .buttonStyle(.plain)
         }
@@ -167,22 +160,39 @@ struct GameTab: View {
 
     @ViewBuilder
     private var fairnessWarning: some View {
-        if store.team.game.totalPoints >= 4, store.team.game.specialRatio > 0.25 {
+        let ratio = store.activeGame.specialRatio
+        if store.activeGame.totalPoints >= 4, ratio > 0.25 {
             InlineWarning(
-                text: String(format: "Kill/zone usage is %.0f%% of points — target is ~20%%.", store.team.game.specialRatio * 100),
+                text: String(format: "Zone/kill is %.0f%% of points — target ~20%%.", ratio * 100),
                 tone: FieldTheme.warn
             )
         }
     }
 
     @ViewBuilder
-    private var shortPodWarnings: some View {
-        let shorts = store.shortPods()
-        if !shorts.isEmpty, !store.isSpecialLineActive {
-            InlineWarning(
-                text: "Short pods: \(shorts.map(\.displayName).joined(separator: ", ")). Fill on Roster or tap a suggestion.",
-                tone: FieldTheme.danger
-            )
+    private var fillSuggestions: some View {
+        let suggestions = store.fillSuggestions()
+        if !suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                InlineWarning(
+                    text: "Pods are short after injuries. Accept a fill or edit On now.",
+                    tone: FieldTheme.danger
+                )
+                ForEach(suggestions, id: \.pod) { item in
+                    Button {
+                        store.applyFillSuggestion(pod: item.pod, playerId: item.player.id)
+                    } label: {
+                        Label(
+                            "Fill \(item.pod.displayName) with \(item.player.name) — \(item.reason)",
+                            systemImage: "person.badge.plus"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                        .padding(.horizontal, 12)
+                    }
+                    .buttonStyle(FieldButtonStyle(fill: FieldTheme.warn.opacity(0.2), foreground: FieldTheme.warn, minHeight: 48))
+                }
+            }
         }
     }
 
@@ -198,129 +208,145 @@ struct GameTab: View {
                     .foregroundStyle(store.isSpecialLineActive ? FieldTheme.warn : FieldTheme.score)
             }
             if players.isEmpty {
-                Text("No active players on this line. Check injuries or pod assignments.")
+                Text("No active players. Check injuries or pods.")
                     .foregroundStyle(FieldTheme.textSecondary)
             } else {
                 ForEach(players) { player in
-                    Button { playerForStatus = player } label: {
-                        PlayerChip(player: player, showsPoints: true)
+                    HStack(spacing: 8) {
+                        Button { playerForStatus = player } label: {
+                            PlayerChip(player: player, points: store.points(for: player.id, scope: .game), compact: true)
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            store.removeFromOnNow(player.id)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(FieldTheme.danger)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Remove \(player.name)")
                     }
-                    .buttonStyle(.plain)
-                }
-                Text("Tap a player to mark injured / out.")
-                    .font(.caption)
-                    .foregroundStyle(FieldTheme.textSecondary)
-            }
-            if store.isSpecialLineActive, let id = savedId, let saved = store.savedLine(id: id) {
-                let missing = saved.playerIds.compactMap { store.player(id: $0) }.filter { $0.status != .active }
-                if !missing.isEmpty {
-                    InlineWarning(text: "Missing: \(missing.map(\.name).joined(separator: ", ")).", tone: FieldTheme.danger)
                 }
             }
+            HStack(spacing: 8) {
+                Button { showEditOnNow = true } label: {
+                    Label("Add / edit", systemImage: "person.crop.circle.badge.plus")
+                }
+                .buttonStyle(FieldButtonStyle(minHeight: 48))
+                if store.activeGame.onNowOverride != nil {
+                    Button("Reset to pods") { store.clearToRotation() }
+                        .buttonStyle(FieldButtonStyle(fill: FieldTheme.surface, minHeight: 48))
+                }
+            }
+            Text("Tap a name for injured/out. Use − to drop someone for a one-off call.")
+                .font(.caption)
+                .foregroundStyle(FieldTheme.textSecondary)
         }
         .padding(14)
         .background(FieldTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var savedId: UUID? {
-        if case .savedLine(let id) = store.team.game.currentLineSource { return id }
-        return nil
-    }
+    private var nextLinesSection: some View {
+        let even = store.activeGame.nextLineCards.filter { $0.kind == .even }
+        let zone = store.activeGame.nextLineCards.filter { $0.kind == .zone }
+        let custom = store.activeGame.nextLineCards.filter { $0.kind == .custom }
 
-    private var nextLines: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(store.isSpecialLineActive ? "Even rotation resumes with" : "Next even lines")
-                .font(.headline)
-            ForEach(Array(store.nextEvenPreviews().enumerated()), id: \.offset) { _, preview in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(preview.label)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(FieldTheme.accent)
-                    Text(preview.players.map(\.name).joined(separator: " · "))
-                        .font(.subheadline)
-                        .foregroundStyle(FieldTheme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Next lines")
+                    .font(.title3.weight(.bold))
+                Spacer()
+                Button { showCustomLine = true } label: {
+                    Label("Custom", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(FieldTheme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-        }
-    }
-
-    private var defenseButtons: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Zone / kill interrupt")
-                .font(.headline)
-            Text("Counts play time, does not skip the next even pods.")
+            Text("Same-size cards. Drag the handle area to reorder. Tap to put on now.")
                 .font(.caption)
                 .foregroundStyle(FieldTheme.textSecondary)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                ForEach(store.team.savedLines) { line in
-                    Button {
-                        store.selectSavedLine(line.id)
-                    } label: {
-                        VStack(spacing: 4) {
-                            Text(line.name)
-                                .font(.headline)
-                            Text(line.force.shortLabel)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(FieldTheme.textSecondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 64)
-                    }
-                    .buttonStyle(
-                        FieldButtonStyle(
-                            fill: store.savedIdIsCurrent(line.id) ? FieldTheme.warn.opacity(0.25) : FieldTheme.surfaceRaised,
-                            minHeight: 64
-                        )
-                    )
-                }
+
+            sectionLabel("Suggested even")
+            cardsGrid(even, badge: "EVEN", color: FieldTheme.score)
+
+            sectionLabel("Zone interrupt")
+            cardsGrid(zone, badge: "ZONE", color: FieldTheme.warn)
+
+            sectionLabel("Custom")
+            if custom.isEmpty {
+                Text("No custom lines yet.")
+                    .font(.caption)
+                    .foregroundStyle(FieldTheme.textSecondary)
+            } else {
+                cardsGrid(custom, badge: "CUSTOM", color: FieldTheme.accent)
             }
         }
     }
 
-    private var podChips: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Pod time")
-                .font(.headline)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(store.handlerPods() + store.cutterPods()) { pod in
-                        VStack(spacing: 4) {
-                            Text(pod.displayName)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(pod.isHandler ? FieldTheme.handler : FieldTheme.cutter)
-                            Text("\(store.team.game.outings(for: pod))")
-                                .font(.title2.weight(.bold).monospacedDigit())
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(FieldTheme.surfaceRaised)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    }
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(FieldTheme.textSecondary)
+    }
+
+    private func cardsGrid(_ cards: [NextLineCard], badge: String, color: Color) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            ForEach(cards) { card in
+                let resolved = store.resolveNextCard(card)
+                NextLineCardView(
+                    title: resolved.title,
+                    subtitle: resolved.subtitle,
+                    badge: badge,
+                    badgeColor: color,
+                    force: resolved.force,
+                    isSelected: isCardSelected(card),
+                    onTap: { store.selectNextCard(card) }
+                )
+                .onDrag {
+                    draggingCard = card
+                    return NSItemProvider(object: card.id.uuidString as NSString)
                 }
+                .onDrop(of: [UTType.text], delegate: NextLineDropDelegate(
+                    item: card,
+                    cards: store.activeGame.nextLineCards,
+                    dragging: $draggingCard,
+                    onMove: { store.reorderNextCards($0) }
+                ))
             }
         }
+    }
+
+    private func isCardSelected(_ card: NextLineCard) -> Bool {
+        switch card.kind {
+        case .even:
+            return !store.isSpecialLineActive && card.evenOffset == 0
+        case .zone:
+            if case .savedLine(let id) = store.activeGame.currentLineSource {
+                return card.relatedId == id
+            }
+            return false
+        case .custom:
+            if case .custom(let id) = store.activeGame.currentLineSource {
+                return card.relatedId == id
+            }
+            return false
+        }
+    }
+
+    private var capsFooter: some View {
+        Button { showCaps = true } label: {
+            CapsFooter(settings: store.team.tournament)
+        }
+        .buttonStyle(.plain)
     }
 
     private var confirmBar: some View {
         HStack(spacing: 12) {
-            Button {
-                store.confirmPoint(weScored: true)
-            } label: {
-                Text("We scored")
-            }
-            .buttonStyle(FieldButtonStyle(fill: FieldTheme.score.opacity(0.28), foreground: FieldTheme.score, minHeight: 64))
-
-            Button {
-                store.confirmPoint(weScored: false)
-            } label: {
-                Text("They scored")
-            }
-            .buttonStyle(FieldButtonStyle(fill: FieldTheme.danger.opacity(0.22), foreground: FieldTheme.danger, minHeight: 64))
+            Button { store.confirmPoint(weScored: true) } label: { Text("We scored") }
+                .buttonStyle(FieldButtonStyle(fill: FieldTheme.score.opacity(0.28), foreground: FieldTheme.score, minHeight: 64))
+            Button { store.confirmPoint(weScored: false) } label: { Text("They scored") }
+                .buttonStyle(FieldButtonStyle(fill: FieldTheme.danger.opacity(0.22), foreground: FieldTheme.danger, minHeight: 64))
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -329,9 +355,23 @@ struct GameTab: View {
     }
 }
 
-private extension TeamStore {
-    func savedIdIsCurrent(_ id: UUID) -> Bool {
-        if case .savedLine(let current) = team.game.currentLineSource { return current == id }
-        return false
+struct NextLineDropDelegate: DropDelegate {
+    let item: NextLineCard
+    let cards: [NextLineCard]
+    @Binding var dragging: NextLineCard?
+    let onMove: ([NextLineCard]) -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging, dragging.id != item.id,
+              let from = cards.firstIndex(where: { $0.id == dragging.id }),
+              let to = cards.firstIndex(where: { $0.id == item.id }) else { return }
+        var updated = cards
+        updated.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        onMove(updated)
     }
 }

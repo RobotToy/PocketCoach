@@ -18,8 +18,6 @@ final class TeamStore: ObservableObject {
         persistEnabled = true
     }
 
-    // MARK: - Persistence
-
     private static var fileURL: URL {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
@@ -50,10 +48,24 @@ final class TeamStore: ObservableObject {
         save()
     }
 
+    private func mutateGame(_ body: (inout GameSession) -> Void) {
+        mutate { team in
+            guard let i = team.games.firstIndex(where: { $0.id == team.activeGameId }) else { return }
+            body(&team.games[i])
+        }
+    }
+
     // MARK: - Lookups
 
+    var activeGame: GameSession {
+        team.games.first(where: { $0.id == team.activeGameId }) ?? team.games[0]
+    }
+
     var activeLineup: Lineup {
-        team.lineups.first(where: { $0.id == team.activeLineupId }) ?? team.lineups[0]
+        if let fromGame = team.lineups.first(where: { $0.id == activeGame.lineupId }) {
+            return fromGame
+        }
+        return team.lineups.first(where: { $0.id == team.activeLineupId }) ?? team.lineups[0]
     }
 
     func player(id: UUID) -> Player? {
@@ -64,14 +76,12 @@ final class TeamStore: ObservableObject {
         team.savedLines.first(where: { $0.id == id })
     }
 
-    func handlerPods(in _: Lineup? = nil) -> [PodId] {
-        [.h1, .h2]
+    func customLine(id: UUID) -> CustomLine? {
+        activeGame.customLines.first(where: { $0.id == id })
     }
 
-    func cutterPods(in lineup: Lineup? = nil) -> [PodId] {
-        let lineup = lineup ?? activeLineup
-        return lineup.collapsedCutterPods ? [.c1, .c2] : [.c1, .c2, .c3]
-    }
+    func handlerPods() -> [PodId] { [.h1, .h2] }
+    func cutterPods() -> [PodId] { [.c1, .c2, .c3] }
 
     func homePod(of playerId: UUID, in lineup: Lineup? = nil) -> PodId? {
         let lineup = lineup ?? activeLineup
@@ -81,40 +91,24 @@ final class TeamStore: ObservableObject {
         return nil
     }
 
-    func benchPlayers(in lineup: Lineup? = nil) -> [Player] {
-        let lineup = lineup ?? activeLineup
-        let assigned = Set(PodId.allCases.flatMap { lineup.playerIds(in: $0) })
-        return team.players.filter { !assigned.contains($0.id) }
-    }
-
     func players(in pod: PodId, lineup: Lineup? = nil) -> [Player] {
         let lineup = lineup ?? activeLineup
         return lineup.playerIds(in: pod).compactMap { player(id: $0) }
     }
 
-    func activePlayers(in pod: PodId, lineup: Lineup? = nil) -> [Player] {
+    func activeMembers(in pod: PodId, lineup: Lineup? = nil) -> [Player] {
         players(in: pod, lineup: lineup).filter { $0.status == .active }
     }
 
-    func composedPod(_ pod: PodId, lineup: Lineup? = nil) -> [Player] {
+    func sidelinePlayers() -> [Player] {
+        team.players.filter { $0.status.isSideline }
+            .sorted { $0.name < $1.name }
+    }
+
+    func unassignedActivePlayers(in lineup: Lineup? = nil) -> [Player] {
         let lineup = lineup ?? activeLineup
-        var result = activePlayers(in: pod, lineup: lineup)
-        let capacity = pod.capacity
-        if result.count < capacity {
-            let existing = Set(result.map(\.id))
-            let floaters = team.players
-                .filter {
-                    $0.status == .active
-                        && $0.floaterPodIds.contains(pod)
-                        && !existing.contains($0.id)
-                        && !(lineup.playerIds(in: pod).contains($0.id))
-                }
-                .sorted { $0.weekendPoints < $1.weekendPoints }
-            for floater in floaters where result.count < capacity {
-                result.append(floater)
-            }
-        }
-        return result
+        let assigned = Set(PodId.allCases.flatMap { lineup.playerIds(in: $0) })
+        return team.players.filter { $0.status == .active && !assigned.contains($0.id) }
     }
 
     func isCompatible(_ player: Player, with pod: PodId) -> Bool {
@@ -124,61 +118,146 @@ final class TeamStore: ObservableObject {
         return player.role == .cutter || player.role == .flex
     }
 
-    func fillSuggestion(for pod: PodId) -> Player? {
-        let current = composedPod(pod)
-        guard current.count < pod.capacity else { return nil }
-        let taken = Set(current.map(\.id))
-        let bench = benchPlayers().filter { $0.status == .active && isCompatible($0, with: pod) && !taken.contains($0.id) }
-        let fromOtherPods = team.players.filter { player in
-            player.status == .active
-                && isCompatible(player, with: pod)
-                && !taken.contains(player.id)
-                && homePod(of: player.id) != nil
-                && homePod(of: player.id) != pod
+    /// Compose a pod using home members + rotating fillers when short.
+    func composedPod(_ pod: PodId, lineup: Lineup? = nil, fillPointers: [String: Int]? = nil) -> [Player] {
+        let lineup = lineup ?? activeLineup
+        var result = activeMembers(in: pod, lineup: lineup)
+        let capacity = pod.capacity
+        guard result.count < capacity else { return result }
+
+        let existing = Set(result.map(\.id))
+        let fillers = lineup.fillers(for: pod)
+            .compactMap { player(id: $0) }
+            .filter { $0.status == .active && !existing.contains($0.id) && isCompatible($0, with: pod) }
+
+        guard !fillers.isEmpty else {
+            // Fallback: least-played compatible from other pods
+            let pointers = fillPointers ?? activeGame.fillPointers
+            _ = pointers
+            let extras = team.players
+                .filter {
+                    $0.status == .active
+                        && !existing.contains($0.id)
+                        && isCompatible($0, with: pod)
+                        && homePod(of: $0.id, in: lineup) != pod
+                }
+                .sorted { points(for: $0.id, scope: .weekend) < points(for: $1.id, scope: .weekend) }
+            for extra in extras where result.count < capacity {
+                result.append(extra)
+            }
+            return result
         }
-        let candidates = (bench + fromOtherPods).sorted { lhs, rhs in
-            if lhs.weekendPoints != rhs.weekendPoints { return lhs.weekendPoints < rhs.weekendPoints }
-            return lhs.name < rhs.name
+
+        let key = pod.rawValue
+        let start = (fillPointers ?? activeGame.fillPointers)[key] ?? lineup.fillPointers[pod] ?? 0
+        var idx = start % fillers.count
+        var added = 0
+        while result.count < capacity && added < fillers.count {
+            let candidate = fillers[idx % fillers.count]
+            if !result.contains(where: { $0.id == candidate.id }) {
+                result.append(candidate)
+            }
+            idx += 1
+            added += 1
         }
-        return candidates.first
+        return result
     }
 
     func shortPods() -> [PodId] {
-        let rotating = handlerPods() + cutterPods()
-        return rotating.filter { composedPod($0).count < $0.capacity }
+        (handlerPods() + cutterPods()).filter { composedPod($0).count < $0.capacity }
     }
 
-    // MARK: - Current line / rotation
+    func fillSuggestions() -> [(pod: PodId, player: Player, reason: String)] {
+        shortPods().compactMap { pod in
+            let current = Set(composedPod(pod).map(\.id))
+            let fromFill = activeLineup.fillers(for: pod)
+                .compactMap { player(id: $0) }
+                .first { $0.status == .active && !current.contains($0.id) }
+            if let fromFill {
+                return (pod, fromFill, "Next on \(pod.displayName) fill list")
+            }
+            let fallback = team.players
+                .filter {
+                    $0.status == .active
+                        && isCompatible($0, with: pod)
+                        && !current.contains($0.id)
+                        && homePod(of: $0.id) != pod
+                }
+                .sorted { points(for: $0.id, scope: .weekend) < points(for: $1.id, scope: .weekend) }
+                .first
+            guard let fallback else { return nil }
+            return (pod, fallback, "Least played compatible")
+        }
+    }
+
+    // MARK: - Points scopes
+
+    func games(in scope: TimeScope, gameId: UUID? = nil) -> [GameSession] {
+        switch scope {
+        case .game:
+            let id = gameId ?? team.activeGameId
+            return team.games.filter { $0.id == id }
+        case .day:
+            let key = activeGame.dayKey
+            return team.games.filter { $0.dayKey == key }
+        case .weekend:
+            return team.games
+        }
+    }
+
+    func points(for playerId: UUID, scope: TimeScope, gameId: UUID? = nil) -> Int {
+        games(in: scope, gameId: gameId).reduce(0) { $0 + $1.points(for: playerId) }
+    }
+
+    func specialRatio(scope: TimeScope, gameId: UUID? = nil) -> (even: Int, special: Int, ratio: Double) {
+        let gs = games(in: scope, gameId: gameId)
+        let even = gs.reduce(0) { $0 + $1.evenPoints }
+        let special = gs.reduce(0) { $0 + $1.specialPoints }
+        let total = even + special
+        let ratio = total == 0 ? 0 : Double(special) / Double(total)
+        return (even, special, ratio)
+    }
+
+    func podOutings(_ pod: PodId, scope: TimeScope, gameId: UUID? = nil) -> Int {
+        games(in: scope, gameId: gameId).reduce(0) { $0 + $1.outings(for: pod) }
+    }
+
+    // MARK: - Current line
 
     var currentHandlerPod: PodId {
         let pods = handlerPods()
-        let index = team.game.hPointer % max(pods.count, 1)
-        return pods[index]
+        return pods[activeGame.hPointer % pods.count]
     }
 
     var currentCutterPod: PodId {
         let pods = cutterPods()
-        let index = team.game.cPointer % max(pods.count, 1)
-        return pods[index]
+        return pods[activeGame.cPointer % pods.count]
     }
 
     func rotationLine(hIndex: Int? = nil, cIndex: Int? = nil) -> (handlers: [Player], cutters: [Player], hPod: PodId, cPod: PodId) {
         let hPods = handlerPods()
         let cPods = cutterPods()
-        let hi = (hIndex ?? team.game.hPointer) % max(hPods.count, 1)
-        let ci = (cIndex ?? team.game.cPointer) % max(cPods.count, 1)
+        let hi = (hIndex ?? activeGame.hPointer) % hPods.count
+        let ci = (cIndex ?? activeGame.cPointer) % cPods.count
         let hPod = hPods[hi]
         let cPod = cPods[ci]
         return (composedPod(hPod), composedPod(cPod), hPod, cPod)
     }
 
     func currentLinePlayers() -> [Player] {
-        switch team.game.currentLineSource {
+        if let override = activeGame.onNowOverride {
+            return override.compactMap { player(id: $0) }
+        }
+        switch activeGame.currentLineSource {
         case .rotation:
             let line = rotationLine()
             return line.handlers + line.cutters
         case .savedLine(let id):
             return composedSavedLine(id)
+        case .custom(let id):
+            return customLine(id: id)?.playerIds.compactMap { player(id: $0) }.filter { $0.status == .active } ?? []
+        case .manual:
+            return []
         }
     }
 
@@ -188,7 +267,8 @@ final class TeamStore: ObservableObject {
     }
 
     func currentLineLabel() -> String {
-        switch team.game.currentLineSource {
+        if activeGame.onNowOverride != nil { return "Custom on-field" }
+        switch activeGame.currentLineSource {
         case .rotation:
             let line = rotationLine()
             return "\(line.hPod.displayName) + \(line.cPod.displayName)"
@@ -196,25 +276,47 @@ final class TeamStore: ObservableObject {
             if let saved = savedLine(id: id) {
                 return "\(saved.name) · \(saved.force.shortLabel)"
             }
-            return "Saved line"
+            return "Zone line"
+        case .custom(let id):
+            return customLine(id: id)?.name ?? "Custom"
+        case .manual:
+            return "Manual"
         }
     }
 
     var isSpecialLineActive: Bool {
-        if case .savedLine = team.game.currentLineSource { return true }
-        return false
-    }
-
-    func nextEvenPreviews(count: Int = 2) -> [(label: String, players: [Player])] {
-        let startH = isSpecialLineActive ? team.game.hPointer : team.game.hPointer + 1
-        let startC = isSpecialLineActive ? team.game.cPointer : team.game.cPointer + 1
-        return (0..<count).map { offset in
-            let line = rotationLine(hIndex: startH + offset, cIndex: startC + offset)
-            return ("\(line.hPod.displayName)+\(line.cPod.displayName)", line.handlers + line.cutters)
+        if activeGame.onNowOverride != nil { return true }
+        switch activeGame.currentLineSource {
+        case .savedLine, .custom, .manual: return true
+        case .rotation: return false
         }
     }
 
-    // MARK: - Wind suggestion
+    func resolveNextCard(_ card: NextLineCard) -> (title: String, subtitle: String, players: [Player], force: Force?) {
+        switch card.kind {
+        case .even:
+            let line = rotationLine(
+                hIndex: activeGame.hPointer + card.evenOffset,
+                cIndex: activeGame.cPointer + card.evenOffset
+            )
+            let names = (line.handlers + line.cutters).map(\.name).joined(separator: " · ")
+            return ("\(line.hPod.displayName)+\(line.cPod.displayName)", names, line.handlers + line.cutters, nil)
+        case .zone:
+            guard let id = card.relatedId, let saved = savedLine(id: id) else {
+                return ("Zone", "Missing line", [], nil)
+            }
+            let players = composedSavedLine(id)
+            return (saved.name, "Force \(saved.force.displayName) · \(players.map(\.name).joined(separator: " · "))", players, saved.force)
+        case .custom:
+            guard let id = card.relatedId, let custom = customLine(id: id) else {
+                return ("Custom", "Missing", [], nil)
+            }
+            let players = custom.playerIds.compactMap { player(id: $0) }
+            return (custom.name, players.map(\.name).joined(separator: " · "), players, nil)
+        }
+    }
+
+    // MARK: - Wind
 
     func speedRank(_ speed: WindSpeed) -> Int {
         switch speed {
@@ -225,7 +327,7 @@ final class TeamStore: ObservableObject {
     }
 
     func matchingWindRule() -> WindRule? {
-        let wind = team.game.wind
+        let wind = activeGame.wind
         return team.windRules.first { rule in
             guard rule.gameType == wind.gameType else { return false }
             if let direction = rule.direction, direction != wind.direction { return false }
@@ -240,7 +342,59 @@ final class TeamStore: ObservableObject {
         return (line, rule.forceOverride ?? line.force, rule.name)
     }
 
-    // MARK: - Mutations: team / game
+    // MARK: - Games
+
+    func setActiveGame(_ id: UUID) {
+        guard team.games.contains(where: { $0.id == id }) else { return }
+        mutate {
+            $0.activeGameId = id
+            if let g = $0.games.first(where: { $0.id == id }) {
+                $0.activeLineupId = g.lineupId
+            }
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func createGame(named name: String?, lineupId: UUID?) {
+        let nextIndex = team.games.count + 1
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let label = trimmed.isEmpty ? "Game \(nextIndex)" : trimmed
+        let lid = lineupId ?? team.activeLineupId
+        let wind = activeGame.wind
+        var session = GameSession.fresh(name: label, lineupId: lid, wind: wind)
+        // Seed next cards with even + all zone lines
+        var cards = GameSession.defaultNextCards()
+        for line in team.savedLines {
+            cards.append(NextLineCard(kind: .zone, relatedId: line.id))
+        }
+        session.nextLineCards = cards
+        mutate {
+            $0.games.append(session)
+            $0.activeGameId = session.id
+            $0.activeLineupId = lid
+        }
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+    }
+
+    func renameGame(_ id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        mutate { team in
+            guard let i = team.games.firstIndex(where: { $0.id == id }) else { return }
+            team.games[i].name = trimmed
+        }
+    }
+
+    func updateTournament(_ settings: TournamentSettings) {
+        mutate { $0.tournament = settings }
+    }
+
+    func setFlipPreference(_ pref: FlipPreference, notes: String) {
+        mutate {
+            $0.flipPreference = pref
+            $0.flipNotes = notes
+        }
+    }
 
     func setTeamName(_ name: String) {
         mutate { $0.name = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? $0.name : name }
@@ -251,21 +405,90 @@ final class TeamStore: ObservableObject {
     }
 
     func updateWind(_ wind: WindState) {
-        mutate { $0.game.wind = wind }
+        mutateGame { $0.wind = wind }
     }
 
     func togglePointIsUpwind() {
-        mutate { $0.game.wind.pointIsUpwind.toggle() }
+        mutateGame { $0.wind.pointIsUpwind.toggle() }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     func selectSavedLine(_ id: UUID) {
-        mutate { $0.game.currentLineSource = .savedLine(id) }
+        mutateGame {
+            $0.currentLineSource = .savedLine(id)
+            $0.onNowOverride = nil
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func selectCustomLine(_ id: UUID) {
+        mutateGame {
+            $0.currentLineSource = .custom(id)
+            $0.onNowOverride = nil
+        }
+    }
+
+    func selectNextCard(_ card: NextLineCard) {
+        switch card.kind {
+        case .even:
+            mutateGame {
+                $0.hPointer = ($0.hPointer + card.evenOffset) % 2
+                $0.cPointer = ($0.cPointer + card.evenOffset) % 3
+                $0.currentLineSource = .rotation
+                $0.onNowOverride = nil
+            }
+        case .zone:
+            if let id = card.relatedId { selectSavedLine(id) }
+        case .custom:
+            if let id = card.relatedId { selectCustomLine(id) }
+        }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     func clearToRotation() {
-        mutate { $0.game.currentLineSource = .rotation }
+        mutateGame {
+            $0.currentLineSource = .rotation
+            $0.onNowOverride = nil
+        }
+    }
+
+    func setOnNowPlayers(_ ids: [UUID]) {
+        mutateGame {
+            $0.onNowOverride = ids
+            $0.currentLineSource = .manual
+        }
+    }
+
+    func removeFromOnNow(_ id: UUID) {
+        var current = currentLinePlayers().map(\.id)
+        current.removeAll { $0 == id }
+        setOnNowPlayers(current)
+    }
+
+    func addToOnNow(_ id: UUID) {
+        var current = currentLinePlayers().map(\.id)
+        guard !current.contains(id) else { return }
+        current.append(id)
+        setOnNowPlayers(current)
+    }
+
+    func moveNextCards(from source: IndexSet, to destination: Int) {
+        mutateGame { game in
+            game.nextLineCards.move(fromOffsets: source, toOffset: destination)
+        }
+    }
+
+    func reorderNextCards(_ cards: [NextLineCard]) {
+        mutateGame { $0.nextLineCards = cards }
+    }
+
+    func addCustomLine(name: String, playerIds: [UUID]) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = CustomLine(name: trimmed.isEmpty ? "Custom" : trimmed, playerIds: playerIds)
+        mutateGame { game in
+            game.customLines.append(line)
+            game.nextLineCards.append(NextLineCard(kind: .custom, relatedId: line.id))
+        }
     }
 
     func confirmPoint(weScored: Bool) {
@@ -273,82 +496,73 @@ final class TeamStore: ObservableObject {
         let special = isSpecialLineActive
         let hPod = currentHandlerPod
         let cPod = currentCutterPod
+        let shortBefore = shortPods()
         mutate { team in
+            guard let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) else { return }
             if weScored {
-                team.game.usScore += 1
+                team.games[gi].usScore += 1
             } else {
-                team.game.themScore += 1
+                team.games[gi].themScore += 1
             }
-            let ids = Set(onField.map(\.id))
-            for i in team.players.indices where ids.contains(team.players[i].id) {
-                team.players[i].weekendPoints += 1
-                team.players[i].gamePoints += 1
+            for player in onField {
+                let key = player.id.uuidString
+                team.games[gi].playerPoints[key, default: 0] += 1
             }
             if special {
-                team.game.specialPoints += 1
+                team.games[gi].specialPoints += 1
             } else {
-                team.game.evenPoints += 1
-                team.game.podOutings[hPod.rawValue, default: 0] += 1
-                team.game.podOutings[cPod.rawValue, default: 0] += 1
-                let hCount = 2
-                let cCount = (team.lineups.first(where: { $0.id == team.activeLineupId })?.collapsedCutterPods == true) ? 2 : 3
-                team.game.hPointer = (team.game.hPointer + 1) % hCount
-                team.game.cPointer = (team.game.cPointer + 1) % max(cCount, 1)
+                team.games[gi].evenPoints += 1
+                team.games[gi].podOutings[hPod.rawValue, default: 0] += 1
+                team.games[gi].podOutings[cPod.rawValue, default: 0] += 1
+                // Advance fill pointers for short pods that used fillers
+                for pod in [hPod, cPod] {
+                    if let li = team.lineups.firstIndex(where: { $0.id == team.games[gi].lineupId }) {
+                        let homeActive = team.lineups[li].playerIds(in: pod)
+                            .compactMap { pid in team.players.first(where: { $0.id == pid && $0.status == .active }) }
+                        if homeActive.count < pod.capacity {
+                            let fillers = team.lineups[li].fillers(for: pod)
+                            if !fillers.isEmpty {
+                                let key = pod.rawValue
+                                let cur = team.games[gi].fillPointers[key] ?? 0
+                                team.games[gi].fillPointers[key] = cur + (pod.capacity - homeActive.count)
+                            }
+                        }
+                    }
+                }
+                team.games[gi].hPointer = (team.games[gi].hPointer + 1) % 2
+                team.games[gi].cPointer = (team.games[gi].cPointer + 1) % 3
             }
-            if team.game.wind.gameType == .upwindDownwind {
-                team.game.wind.pointIsUpwind.toggle()
+            if team.games[gi].wind.gameType == .upwindDownwind {
+                team.games[gi].wind.pointIsUpwind.toggle()
             }
-            team.game.currentLineSource = .rotation
-            team.game.lastConfirmedAt = Date()
+            team.games[gi].currentLineSource = .rotation
+            team.games[gi].onNowOverride = nil
+            team.games[gi].lastConfirmedAt = Date()
+            _ = shortBefore
         }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     func bumpScore(us: Int = 0, them: Int = 0) {
-        mutate {
-            $0.game.usScore = max(0, $0.game.usScore + us)
-            $0.game.themScore = max(0, $0.game.themScore + them)
+        mutateGame {
+            $0.usScore = max(0, $0.usScore + us)
+            $0.themScore = max(0, $0.themScore + them)
         }
     }
 
-    func startNewGame(lineupId: UUID, resetGamePoints: Bool) {
+    func adjustPlayerPoints(id: UUID, delta: Int, scope: TimeScope) {
         mutate { team in
-            team.activeLineupId = lineupId
-            team.game.usScore = 0
-            team.game.themScore = 0
-            team.game.hPointer = 0
-            team.game.cPointer = 0
-            team.game.currentLineSource = .rotation
-            team.game.specialPoints = 0
-            team.game.evenPoints = 0
-            team.game.podOutings = [:]
-            team.game.lastConfirmedAt = nil
-            if resetGamePoints {
-                for i in team.players.indices {
-                    team.players[i].gamePoints = 0
-                }
+            switch scope {
+            case .game:
+                guard let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) else { return }
+                let key = id.uuidString
+                team.games[gi].playerPoints[key] = max(0, (team.games[gi].playerPoints[key] ?? 0) + delta)
+            case .day, .weekend:
+                // Apply to active game so totals move immediately
+                guard let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) else { return }
+                let key = id.uuidString
+                team.games[gi].playerPoints[key] = max(0, (team.games[gi].playerPoints[key] ?? 0) + delta)
             }
-        }
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-    }
-
-    func resetWeekendPoints() {
-        mutate { team in
-            for i in team.players.indices {
-                team.players[i].weekendPoints = 0
-                team.players[i].gamePoints = 0
-            }
-            team.game.evenPoints = 0
-            team.game.specialPoints = 0
-            team.game.podOutings = [:]
-        }
-    }
-
-    func adjustPlayerPoints(id: UUID, weekendDelta: Int = 0, gameDelta: Int = 0) {
-        mutate { team in
-            guard let i = team.players.firstIndex(where: { $0.id == id }) else { return }
-            team.players[i].weekendPoints = max(0, team.players[i].weekendPoints + weekendDelta)
-            team.players[i].gamePoints = max(0, team.players[i].gamePoints + gameDelta)
         }
     }
 
@@ -358,9 +572,13 @@ final class TeamStore: ObservableObject {
         guard team.lineups.contains(where: { $0.id == id }) else { return }
         mutate {
             $0.activeLineupId = id
-            $0.game.hPointer = 0
-            $0.game.cPointer = 0
-            $0.game.currentLineSource = .rotation
+            if let gi = $0.games.firstIndex(where: { $0.id == $0.activeGameId }) {
+                $0.games[gi].lineupId = id
+                $0.games[gi].hPointer = 0
+                $0.games[gi].cPointer = 0
+                $0.games[gi].currentLineSource = .rotation
+                $0.games[gi].onNowOverride = nil
+            }
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -381,7 +599,8 @@ final class TeamStore: ObservableObject {
             id: UUID(),
             name: trimmed.isEmpty ? "\(source.name) copy" : trimmed,
             pods: source.pods,
-            collapsedCutterPods: source.collapsedCutterPods
+            fillRotation: source.fillRotation,
+            fillPointers: [:]
         )
         mutate { $0.lineups.append(copy) }
     }
@@ -396,12 +615,34 @@ final class TeamStore: ObservableObject {
         }
     }
 
-    func setCollapsedCutterPods(_ collapsed: Bool) {
+    func archiveCurrentLineup(note: String? = nil) {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let label = trimmed.isEmpty
+            ? "\(activeLineup.name) · \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+            : trimmed
+        let snap = LineupSnapshot(name: label, lineup: activeLineup)
+        mutate { $0.lineupHistory.insert(snap, at: 0) }
+    }
+
+    func restoreSnapshot(_ id: UUID) {
+        guard let snap = team.lineupHistory.first(where: { $0.id == id }) else { return }
+        archiveCurrentLineup(note: "Before restore")
+        var restored = snap.lineup
+        restored.id = UUID()
+        restored.name = "\(snap.lineup.name) restored"
+        mutate {
+            $0.lineups.append(restored)
+            $0.activeLineupId = restored.id
+        }
+    }
+
+    func replaceActiveLineupPods(_ pods: [PodId: [UUID]], fillRotation: [PodId: [UUID]]) {
+        archiveCurrentLineup()
         mutate { team in
             guard let i = team.lineups.firstIndex(where: { $0.id == team.activeLineupId }) else { return }
-            team.lineups[i].collapsedCutterPods = collapsed
-            let cCount = collapsed ? 2 : 3
-            team.game.cPointer = team.game.cPointer % cCount
+            team.lineups[i].pods = pods
+            team.lineups[i].fillRotation = fillRotation
+            team.lineups[i].fillPointers = [:]
         }
     }
 
@@ -420,9 +661,31 @@ final class TeamStore: ObservableObject {
         }
     }
 
-    func applyFillSuggestion(for pod: PodId) {
-        guard let suggestion = fillSuggestion(for: pod) else { return }
-        assign(playerId: suggestion.id, to: pod)
+    func setFillRotation(for pod: PodId, playerIds: [UUID]) {
+        mutate { team in
+            guard let i = team.lineups.firstIndex(where: { $0.id == team.activeLineupId }) else { return }
+            team.lineups[i].fillRotation[pod] = playerIds
+        }
+    }
+
+    func addToFillRotation(playerId: UUID, pod: PodId) {
+        mutate { team in
+            guard let i = team.lineups.firstIndex(where: { $0.id == team.activeLineupId }) else { return }
+            var list = team.lineups[i].fillRotation[pod] ?? []
+            if !list.contains(playerId) { list.append(playerId) }
+            team.lineups[i].fillRotation[pod] = list
+        }
+    }
+
+    func removeFromFillRotation(playerId: UUID, pod: PodId) {
+        mutate { team in
+            guard let i = team.lineups.firstIndex(where: { $0.id == team.activeLineupId }) else { return }
+            team.lineups[i].fillRotation[pod] = (team.lineups[i].fillRotation[pod] ?? []).filter { $0 != playerId }
+        }
+    }
+
+    func applyFillSuggestion(pod: PodId, playerId: UUID) {
+        addToFillRotation(playerId: playerId, pod: pod)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
@@ -431,17 +694,15 @@ final class TeamStore: ObservableObject {
     func addPlayer(name: String, number: String?, role: PlayerRole) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let player = Player(name: trimmed, number: number.flatMap { $0.isEmpty ? nil : $0 }, role: role)
-        mutate { $0.players.append(player) }
+        mutate { $0.players.append(Player(name: trimmed, number: number.flatMap { $0.isEmpty ? nil : $0 }, role: role)) }
     }
 
-    func updatePlayer(_ id: UUID, name: String, number: String?, role: PlayerRole, floaterPodIds: [PodId]) {
+    func updatePlayer(_ id: UUID, name: String, number: String?, role: PlayerRole) {
         mutate { team in
             guard let i = team.players.firstIndex(where: { $0.id == id }) else { return }
             team.players[i].name = name.trimmingCharacters(in: .whitespacesAndNewlines)
             team.players[i].number = number.flatMap { $0.isEmpty ? nil : $0 }
             team.players[i].role = role
-            team.players[i].floaterPodIds = floaterPodIds
         }
     }
 
@@ -449,6 +710,10 @@ final class TeamStore: ObservableObject {
         mutate { team in
             guard let i = team.players.firstIndex(where: { $0.id == id }) else { return }
             team.players[i].status = status
+            // Drop injured/out from on-now override
+            if status.isSideline, let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) {
+                team.games[gi].onNowOverride = team.games[gi].onNowOverride?.filter { $0 != id }
+            }
         }
         UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
     }
@@ -459,6 +724,7 @@ final class TeamStore: ObservableObject {
             for i in team.lineups.indices {
                 for pod in PodId.allCases {
                     team.lineups[i].pods[pod] = (team.lineups[i].pods[pod] ?? []).filter { $0 != id }
+                    team.lineups[i].fillRotation[pod] = (team.lineups[i].fillRotation[pod] ?? []).filter { $0 != id }
                 }
             }
             for i in team.savedLines.indices {
@@ -467,7 +733,7 @@ final class TeamStore: ObservableObject {
         }
     }
 
-    // MARK: - Saved lines & wind rules
+    // MARK: - Saved lines / wind
 
     func upsertSavedLine(_ line: SavedLine) {
         mutate { team in
@@ -475,6 +741,10 @@ final class TeamStore: ObservableObject {
                 team.savedLines[i] = line
             } else {
                 team.savedLines.append(line)
+                // Add to next-line cards of active game
+                if let gi = team.games.firstIndex(where: { $0.id == team.activeGameId }) {
+                    team.games[gi].nextLineCards.append(NextLineCard(kind: .zone, relatedId: line.id))
+                }
             }
         }
     }
@@ -483,8 +753,11 @@ final class TeamStore: ObservableObject {
         mutate { team in
             team.savedLines.removeAll { $0.id == id }
             team.windRules.removeAll { $0.savedLineId == id }
-            if case .savedLine(let current) = team.game.currentLineSource, current == id {
-                team.game.currentLineSource = .rotation
+            for i in team.games.indices {
+                team.games[i].nextLineCards.removeAll { $0.kind == .zone && $0.relatedId == id }
+                if case .savedLine(let current) = team.games[i].currentLineSource, current == id {
+                    team.games[i].currentLineSource = .rotation
+                }
             }
         }
     }
@@ -500,9 +773,7 @@ final class TeamStore: ObservableObject {
     }
 
     func deleteWindRule(_ id: UUID) {
-        mutate { team in
-            team.windRules.removeAll { $0.id == id }
-        }
+        mutate { $0.windRules.removeAll { $0.id == id } }
     }
 
     func restoreSampleData() {

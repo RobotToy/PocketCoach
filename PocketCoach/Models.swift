@@ -29,6 +29,7 @@ enum PlayerStatus: String, Codable, CaseIterable, Identifiable {
         case .out: "Out"
         }
     }
+    var isSideline: Bool { self == .injured || self == .out }
 }
 
 enum PodId: String, Codable, CaseIterable, Identifiable, Hashable {
@@ -54,29 +55,19 @@ struct Player: Identifiable, Codable, Hashable {
     var number: String?
     var role: PlayerRole
     var status: PlayerStatus
-    var weekendPoints: Int
-    var gamePoints: Int
-    /// When these pods are short, this player can fill them.
-    var floaterPodIds: [PodId]
 
     init(
         id: UUID = UUID(),
         name: String,
         number: String? = nil,
         role: PlayerRole,
-        status: PlayerStatus = .active,
-        weekendPoints: Int = 0,
-        gamePoints: Int = 0,
-        floaterPodIds: [PodId] = []
+        status: PlayerStatus = .active
     ) {
         self.id = id
         self.name = name
         self.number = number
         self.role = role
         self.status = status
-        self.weekendPoints = weekendPoints
-        self.gamePoints = gamePoints
-        self.floaterPodIds = floaterPodIds
     }
 }
 
@@ -84,22 +75,44 @@ struct Lineup: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
     var pods: [PodId: [UUID]]
-    var collapsedCutterPods: Bool
+    /// Ordered fill list per short pod — rotate these people in so time stays even.
+    var fillRotation: [PodId: [UUID]]
+    var fillPointers: [PodId: Int]
 
     init(
         id: UUID = UUID(),
         name: String,
         pods: [PodId: [UUID]] = [:],
-        collapsedCutterPods: Bool = false
+        fillRotation: [PodId: [UUID]] = [:],
+        fillPointers: [PodId: Int] = [:]
     ) {
         self.id = id
         self.name = name
         self.pods = pods
-        self.collapsedCutterPods = collapsedCutterPods
+        self.fillRotation = fillRotation
+        self.fillPointers = fillPointers
     }
 
     func playerIds(in pod: PodId) -> [UUID] {
         pods[pod] ?? []
+    }
+
+    func fillers(for pod: PodId) -> [UUID] {
+        fillRotation[pod] ?? []
+    }
+}
+
+struct LineupSnapshot: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var savedAt: Date
+    var lineup: Lineup
+
+    init(id: UUID = UUID(), name: String, savedAt: Date = Date(), lineup: Lineup) {
+        self.id = id
+        self.name = name
+        self.savedAt = savedAt
+        self.lineup = lineup
     }
 }
 
@@ -147,13 +160,25 @@ struct SavedLine: Identifiable, Codable, Hashable {
         id: UUID = UUID(),
         name: String,
         defenseKind: DefenseKind,
-        force: Force,
+        force: Force = .backhand,
         playerIds: [UUID] = []
     ) {
         self.id = id
         self.name = name
         self.defenseKind = defenseKind
         self.force = force
+        self.playerIds = playerIds
+    }
+}
+
+struct CustomLine: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var playerIds: [UUID]
+
+    init(id: UUID = UUID(), name: String, playerIds: [UUID] = []) {
+        self.id = id
+        self.name = name
         self.playerIds = playerIds
     }
 }
@@ -197,7 +222,6 @@ struct WindState: Codable, Hashable {
     var gameType: WindGameType
     var direction: WindDirection
     var speed: WindSpeed
-    /// True when we are defending the upwind end (they attack into the wind).
     var pointIsUpwind: Bool
 
     static let `default` = WindState(
@@ -242,9 +266,85 @@ struct WindRule: Identifiable, Codable, Hashable {
 enum LineSource: Codable, Equatable, Hashable {
     case rotation
     case savedLine(UUID)
+    case custom(UUID)
+    case manual
 }
 
-struct GameState: Codable, Hashable {
+enum NextLineCardKind: String, Codable, Hashable {
+    case even, zone, custom
+}
+
+struct NextLineCard: Identifiable, Codable, Hashable {
+    var id: UUID
+    var kind: NextLineCardKind
+    /// For even: offset index. For zone/custom: related id as string.
+    var evenOffset: Int
+    var relatedId: UUID?
+
+    init(id: UUID = UUID(), kind: NextLineCardKind, evenOffset: Int = 0, relatedId: UUID? = nil) {
+        self.id = id
+        self.kind = kind
+        self.evenOffset = evenOffset
+        self.relatedId = relatedId
+    }
+}
+
+struct TournamentSettings: Codable, Hashable {
+    var gameTo: Int
+    var halfCapMinutes: Int
+    var softCapMinutes: Int
+    var hardCapMinutes: Int
+
+    static let `default` = TournamentSettings(
+        gameTo: 15,
+        halfCapMinutes: 45,
+        softCapMinutes: 70,
+        hardCapMinutes: 80
+    )
+}
+
+enum FlipPreference: String, Codable, CaseIterable, Identifiable {
+    case defense, offense, startUpwind, startDownwind, receive, pull
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .defense: "Start on defense"
+        case .offense: "Start on offense"
+        case .startUpwind: "Start upwind"
+        case .startDownwind: "Start downwind"
+        case .receive: "Receive"
+        case .pull: "Pull"
+        }
+    }
+    var detail: String {
+        switch self {
+        case .defense: "If we win the flip, take D."
+        case .offense: "If we win the flip, take O."
+        case .startUpwind: "If we win, choose the upwind end first."
+        case .startDownwind: "If we win, choose the downwind end first."
+        case .receive: "If we win, receive the pull."
+        case .pull: "If we win, pull."
+        }
+    }
+}
+
+enum TimeScope: String, Codable, CaseIterable, Identifiable {
+    case game, day, weekend
+    var id: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .game: "This game"
+        case .day: "Today"
+        case .weekend: "All games"
+        }
+    }
+}
+
+struct GameSession: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var lineupId: UUID
     var usScore: Int
     var themScore: Int
     var hPointer: Int
@@ -255,19 +355,20 @@ struct GameState: Codable, Hashable {
     var evenPoints: Int
     var lastConfirmedAt: Date?
     var podOutings: [String: Int]
+    var playerPoints: [String: Int]
+    var onNowOverride: [UUID]?
+    var nextLineCards: [NextLineCard]
+    var customLines: [CustomLine]
+    var fillPointers: [String: Int]
 
-    static let `default` = GameState(
-        usScore: 0,
-        themScore: 0,
-        hPointer: 0,
-        cPointer: 0,
-        currentLineSource: .rotation,
-        wind: .default,
-        specialPoints: 0,
-        evenPoints: 0,
-        lastConfirmedAt: nil,
-        podOutings: [:]
-    )
+    static func dayKey(for date: Date) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar.current
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    var dayKey: String { Self.dayKey(for: createdAt) }
 
     var totalPoints: Int { evenPoints + specialPoints }
 
@@ -279,17 +380,58 @@ struct GameState: Codable, Hashable {
     func outings(for pod: PodId) -> Int {
         podOutings[pod.rawValue] ?? 0
     }
+
+    func points(for playerId: UUID) -> Int {
+        playerPoints[playerId.uuidString] ?? 0
+    }
+
+    static func fresh(name: String, lineupId: UUID, wind: WindState = .default) -> GameSession {
+        GameSession(
+            id: UUID(),
+            name: name,
+            createdAt: Date(),
+            lineupId: lineupId,
+            usScore: 0,
+            themScore: 0,
+            hPointer: 0,
+            cPointer: 0,
+            currentLineSource: .rotation,
+            wind: wind,
+            specialPoints: 0,
+            evenPoints: 0,
+            lastConfirmedAt: nil,
+            podOutings: [:],
+            playerPoints: [:],
+            onNowOverride: nil,
+            nextLineCards: Self.defaultNextCards(),
+            customLines: [],
+            fillPointers: [:]
+        )
+    }
+
+    static func defaultNextCards() -> [NextLineCard] {
+        [
+            NextLineCard(kind: .even, evenOffset: 0),
+            NextLineCard(kind: .even, evenOffset: 1),
+            NextLineCard(kind: .even, evenOffset: 2)
+        ]
+    }
 }
 
 struct Team: Codable, Hashable {
     var name: String
     var joinCode: String
     var activeLineupId: UUID
+    var activeGameId: UUID
     var players: [Player]
     var lineups: [Lineup]
+    var lineupHistory: [LineupSnapshot]
     var savedLines: [SavedLine]
     var windRules: [WindRule]
-    var game: GameState
+    var games: [GameSession]
+    var tournament: TournamentSettings
+    var flipPreference: FlipPreference
+    var flipNotes: String
 }
 
 enum SeedIDs {
@@ -313,12 +455,14 @@ enum SeedIDs {
     static let remy = UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-000000000012")!
 
     static let lineupWeekend = UUID(uuidString: "bbbbbbbb-bbbb-4ccc-8ddd-000000000001")!
-    static let clamBH = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000001")!
-    static let clamFlick = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000002")!
-    static let cup = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000003")!
-    static let person = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000004")!
-    static let junk = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000005")!
-    static let kill = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000006")!
+    static let game1 = UUID(uuidString: "dddddddd-bbbb-4ccc-8ddd-000000000001")!
+    static let clam1 = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000001")!
+    static let clam2 = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000002")!
+    static let clam3 = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000003")!
+    static let cup = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000004")!
+    static let person = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000005")!
+    static let junk = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000006")!
+    static let kill = UUID(uuidString: "cccccccc-bbbb-4ccc-8ddd-000000000007")!
 }
 
 extension Team {
@@ -358,101 +502,72 @@ extension Team {
                 .c1: [SeedIDs.gia, SeedIDs.harper, SeedIDs.indy, SeedIDs.jules],
                 .c2: [SeedIDs.kai, SeedIDs.lane, SeedIDs.morgan, SeedIDs.nico],
                 .c3: [SeedIDs.oak, SeedIDs.parker, SeedIDs.quinn, SeedIDs.remy]
+            ],
+            fillRotation: [
+                .c1: [SeedIDs.kai, SeedIDs.oak],
+                .c2: [SeedIDs.gia, SeedIDs.oak],
+                .c3: [SeedIDs.harper, SeedIDs.lane],
+                .h1: [SeedIDs.drew],
+                .h2: [SeedIDs.alex]
             ]
         )
 
+        var game = GameSession.fresh(name: "Game 1", lineupId: SeedIDs.lineupWeekend)
+        game.id = SeedIDs.game1
+        game.nextLineCards = [
+            NextLineCard(kind: .even, evenOffset: 0),
+            NextLineCard(kind: .even, evenOffset: 1),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.clam1),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.clam2),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.clam3),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.cup),
+            NextLineCard(kind: .zone, relatedId: SeedIDs.kill)
+        ]
+
         let saved: [SavedLine] = [
-            SavedLine(
-                id: SeedIDs.clamBH,
-                name: "Clam BH",
-                defenseKind: .clam,
-                force: .backhand,
-                playerIds: [SeedIDs.alex, SeedIDs.drew, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn]
-            ),
-            SavedLine(
-                id: SeedIDs.clamFlick,
-                name: "Clam Flick",
-                defenseKind: .clam,
-                force: .flick,
-                playerIds: [SeedIDs.blair, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.lane, SeedIDs.parker, SeedIDs.nico]
-            ),
-            SavedLine(
-                id: SeedIDs.cup,
-                name: "Cup",
-                defenseKind: .cup,
-                force: .backhand,
-                playerIds: [SeedIDs.casey, SeedIDs.fin, SeedIDs.gia, SeedIDs.morgan, SeedIDs.oak, SeedIDs.remy, SeedIDs.quinn]
-            ),
-            SavedLine(
-                id: SeedIDs.person,
-                name: "Person",
-                defenseKind: .person,
-                force: .backhand,
-                playerIds: [SeedIDs.alex, SeedIDs.blair, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.lane, SeedIDs.oak]
-            ),
-            SavedLine(
-                id: SeedIDs.junk,
-                name: "Junk",
-                defenseKind: .junk,
-                force: .flick,
-                playerIds: [SeedIDs.drew, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.morgan, SeedIDs.parker, SeedIDs.remy]
-            ),
-            SavedLine(
-                id: SeedIDs.kill,
-                name: "Kill",
-                defenseKind: .kill,
-                force: .flick,
-                playerIds: [SeedIDs.alex, SeedIDs.casey, SeedIDs.gia, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn, SeedIDs.harper]
-            )
+            SavedLine(id: SeedIDs.clam1, name: "Clam 1", defenseKind: .clam, force: .backhand,
+                      playerIds: [SeedIDs.alex, SeedIDs.drew, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn]),
+            SavedLine(id: SeedIDs.clam2, name: "Clam 2", defenseKind: .clam, force: .backhand,
+                      playerIds: [SeedIDs.blair, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.lane, SeedIDs.parker, SeedIDs.nico]),
+            SavedLine(id: SeedIDs.clam3, name: "Clam 3", defenseKind: .clam, force: .flick,
+                      playerIds: [SeedIDs.casey, SeedIDs.fin, SeedIDs.morgan, SeedIDs.remy, SeedIDs.harper, SeedIDs.oak, SeedIDs.quinn]),
+            SavedLine(id: SeedIDs.cup, name: "Cup", defenseKind: .cup, force: .backhand,
+                      playerIds: [SeedIDs.casey, SeedIDs.fin, SeedIDs.gia, SeedIDs.morgan, SeedIDs.oak, SeedIDs.remy, SeedIDs.quinn]),
+            SavedLine(id: SeedIDs.person, name: "Person", defenseKind: .person, force: .backhand,
+                      playerIds: [SeedIDs.alex, SeedIDs.blair, SeedIDs.gia, SeedIDs.harper, SeedIDs.kai, SeedIDs.lane, SeedIDs.oak]),
+            SavedLine(id: SeedIDs.junk, name: "Junk", defenseKind: .junk, force: .flick,
+                      playerIds: [SeedIDs.drew, SeedIDs.eden, SeedIDs.indy, SeedIDs.jules, SeedIDs.morgan, SeedIDs.parker, SeedIDs.remy]),
+            SavedLine(id: SeedIDs.kill, name: "Kill", defenseKind: .kill, force: .flick,
+                      playerIds: [SeedIDs.alex, SeedIDs.casey, SeedIDs.gia, SeedIDs.kai, SeedIDs.oak, SeedIDs.quinn, SeedIDs.harper])
         ]
 
         let rules: [WindRule] = [
-            WindRule(
-                name: "Crosswind L→R",
-                gameType: .crosswind,
-                direction: .leftToRight,
-                savedLineId: SeedIDs.clamBH,
-                forceOverride: .backhand
-            ),
-            WindRule(
-                name: "Crosswind R→L",
-                gameType: .crosswind,
-                direction: .rightToLeft,
-                savedLineId: SeedIDs.clamFlick,
-                forceOverride: .flick
-            ),
-            WindRule(
-                name: "No / light wind",
-                gameType: .none,
-                minSpeed: nil,
-                savedLineId: SeedIDs.person,
-                forceOverride: .backhand
-            ),
-            WindRule(
-                name: "They attack downwind",
-                gameType: .upwindDownwind,
-                minSpeed: .strong,
-                pointIsUpwind: false,
-                savedLineId: SeedIDs.junk
-            ),
-            WindRule(
-                name: "They attack upwind",
-                gameType: .upwindDownwind,
-                minSpeed: .strong,
-                pointIsUpwind: true,
-                savedLineId: SeedIDs.cup
-            )
+            WindRule(name: "Crosswind L→R → Clam · BH", gameType: .crosswind, direction: .leftToRight,
+                     savedLineId: SeedIDs.clam1, forceOverride: .backhand),
+            WindRule(name: "Crosswind R→L → Clam · Flick", gameType: .crosswind, direction: .rightToLeft,
+                     savedLineId: SeedIDs.clam2, forceOverride: .flick),
+            WindRule(name: "No / light wind → Person", gameType: .none,
+                     savedLineId: SeedIDs.person, forceOverride: .backhand),
+            WindRule(name: "They attack downwind → Junk", gameType: .upwindDownwind, minSpeed: .strong,
+                     pointIsUpwind: false, savedLineId: SeedIDs.junk),
+            WindRule(name: "They attack upwind → Cup", gameType: .upwindDownwind, minSpeed: .strong,
+                     pointIsUpwind: true, savedLineId: SeedIDs.cup)
         ]
 
         return Team(
             name: "Pocket Coach",
             joinCode: makeJoinCode(),
             activeLineupId: SeedIDs.lineupWeekend,
+            activeGameId: SeedIDs.game1,
             players: players,
             lineups: [weekend],
+            lineupHistory: [],
             savedLines: saved,
             windRules: rules,
-            game: .default
+            games: [game],
+            tournament: .default,
+            flipPreference: .defense,
+            flipNotes: "Prefer D if wind is calm. Take upwind if it's blowing."
         )
     }
 }
